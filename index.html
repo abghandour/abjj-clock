@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BJJ Timer</title>
   <style>
+    @font-face {
+      font-family: 'DSEG7';
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+      src: url('fonts/DSEG7Classic-Bold.woff2') format('woff2');
+    }
     :root {
       --bg-primary: #1a1a2e;
       --bg-secondary: #16213e;
@@ -57,6 +64,10 @@
       font-variant-numeric: tabular-nums;
     }
 
+    #clock {
+      font-family: 'DSEG7', sans-serif;
+    }
+
     #day-of-week {
       color: var(--text-muted);
       font-size: 0.7em;
@@ -101,11 +112,12 @@
       color: var(--text-label);
       text-transform: uppercase;
       letter-spacing: 0.3em;
-      margin-bottom: 0.5vh;
+      margin-bottom: 1.5vh;
     }
 
     #round-timer {
       font-size: clamp(4rem, 18vw, 20rem);
+      font-family: 'DSEG7', sans-serif;
       font-weight: 700;
       color: var(--text-round);
       line-height: 1;
@@ -123,11 +135,12 @@
       color: var(--text-label);
       text-transform: uppercase;
       letter-spacing: 0.3em;
-      margin-bottom: 0.5vh;
+      margin-bottom: 1.5vh;
     }
 
     #rest-timer {
       font-size: clamp(2.5rem, 10vw, 12rem);
+      font-family: 'DSEG7', sans-serif;
       font-weight: 700;
       color: var(--text-rest);
       line-height: 1;
@@ -171,6 +184,7 @@
 
     #prep-countdown {
       font-size: clamp(6rem, 25vw, 30rem);
+      font-family: 'DSEG7', sans-serif;
       font-weight: 700;
       color: var(--accent-yellow);
     }
@@ -273,6 +287,7 @@
 
     #overlay .overlay-input {
       font-size: clamp(2rem, 8vw, 10rem);
+      font-family: 'DSEG7', sans-serif;
       color: var(--accent-green);
       font-weight: 700;
       font-variant-numeric: tabular-nums;
@@ -464,6 +479,7 @@
 
     #round-list {
       display: none;
+      font-family: 'DSEG7', sans-serif;
       font-size: clamp(0.6rem, 1.2vw, 1.2rem);
       color: var(--text-label);
       line-height: 1.8;

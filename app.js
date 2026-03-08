@@ -1969,8 +1969,8 @@ class OverlayManager {
       rows += `<span class="mg-key">${i}</span>` +
               `<span class="mg-icon">${icon}</span>` +
               `<span class="mg-name">${name}</span>` +
-              `<span class="mg-note" style="color:var(--text-round);">${roundStr}</span>` +
-              `<span class="mg-note" style="color:var(--text-rest);">${restStr}</span>`;
+              `<span class="mg-note" style="color:var(--text-round);font-family:'DSEG7',sans-serif;">${roundStr}</span>` +
+              `<span class="mg-note" style="color:var(--text-rest);font-family:'DSEG7',sans-serif;">${restStr}</span>`;
     });
 
     const _arrow = '<svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg>';
