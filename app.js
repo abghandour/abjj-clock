@@ -921,6 +921,7 @@ class Renderer {
     else if (lower.includes('inv')) icon = invPyramidIcon;
     else if (lower.includes('ladder up')) icon = ladderUpIcon;
     else if (lower.includes('ladder down')) icon = ladderDownIcon;
+    else if (lower === 'tabata') icon = `<svg ${_s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`;
     else icon = '';
 
     this.presetLabelEl.innerHTML = `${icon}${name}`;
@@ -1502,6 +1503,9 @@ class OverlayManager {
       case '4':
         this._startTrainingPreset('inv_pyramid');
         break;
+      case '5':
+        this._applyPreset(20, 10, 8, 'Tabata');
+        break;
       default:
         break;
     }
@@ -1989,13 +1993,16 @@ class OverlayManager {
       `<svg ${_s} fill="currentColor"><rect x="1" y="16" width="3" height="6" rx="0.5"/><rect x="5.5" y="11" width="3" height="11" rx="0.5"/><rect x="10" y="5" width="3" height="17" rx="0.5"/><rect x="14.5" y="11" width="3" height="11" rx="0.5"/><rect x="19" y="16" width="3" height="6" rx="0.5"/></svg>`;
     const invPyramidIcon =
       `<svg ${_s} fill="currentColor"><rect x="1" y="5" width="3" height="17" rx="0.5"/><rect x="5.5" y="11" width="3" height="11" rx="0.5"/><rect x="10" y="16" width="3" height="6" rx="0.5"/><rect x="14.5" y="11" width="3" height="11" rx="0.5"/><rect x="19" y="5" width="3" height="17" rx="0.5"/></svg>`;
+    const tabataIcon =
+      `<svg ${_s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`;
 
     const items = [
       { key: '0', icon: chainsawIcon, name: 'Chainsaw', note: 'Alternating round/rest' },
       { key: '1', icon: ladderUpIcon, name: 'Ladder Up', note: 'Short → long' },
       { key: '2', icon: ladderDownIcon, name: 'Ladder Down', note: 'Long → short' },
       { key: '3', icon: pyramidIcon, name: 'Pyramid', note: 'Short → long → short' },
-      { key: '4', icon: invPyramidIcon, name: 'Inv. Pyramid', note: 'Long → short → long' }
+      { key: '4', icon: invPyramidIcon, name: 'Inv. Pyramid', note: 'Long → short → long' },
+      { key: '5', icon: tabataIcon, name: 'Tabata', note: '20s on / 10s off × 8' }
     ];
 
     let rows = '';
