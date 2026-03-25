@@ -3120,7 +3120,19 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       classProgress.draw();
     }, 1000);
 
-    // 12. Refresh next class countdown every 60 seconds
+    // 12. Re-read config.json every 30 minutes to pick up schedule syncs
+    setInterval(() => {
+      scheduleManager.loadConfig().then(() => {
+        const now = new Date();
+        const active = scheduleManager.getActiveClass(now);
+        const next = scheduleManager.getNextClass(now);
+        renderer.updateScheduleDisplay(active, next, null);
+        renderer.updateNextClassDisplay(active ? next : null);
+        classProgress.setActiveClass(active);
+      });
+    }, 30 * 60 * 1000);
+
+    // 13. Refresh next class countdown every 60 seconds
     setInterval(() => {
       const now = new Date();
       const active = scheduleManager.getActiveClass(now);

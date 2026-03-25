@@ -17,22 +17,54 @@
     "endOfRoundDuration": 0.5,
     "endOfRestFrequency": 600,
     "endOfRestDuration": 0.5,
-    "fanfareNotes": [523, 659, 784],
+    "fanfareNotes": [
+      523,
+      659,
+      784
+    ],
     "fanfareNoteDuration": 0.3,
     "fanfareNoteGap": 0.12,
     "volume": 0.5
   },
   "competitionPresets": {
-    "Kids (under 15)": { "roundDurationSec": 240, "restDurationSec": 60, "numRounds": 0 },
-    "White Belt": { "roundDurationSec": 300, "restDurationSec": 60, "numRounds": 0 },
-    "Blue Belt": { "roundDurationSec": 360, "restDurationSec": 60, "numRounds": 0 },
-    "Purple Belt": { "roundDurationSec": 420, "restDurationSec": 60, "numRounds": 0 },
-    "Brown Belt": { "roundDurationSec": 480, "restDurationSec": 60, "numRounds": 0 },
-    "Black Belt": { "roundDurationSec": 600, "restDurationSec": 60, "numRounds": 0 }
+    "Kids (under 15)": {
+      "roundDurationSec": 240,
+      "restDurationSec": 60,
+      "numRounds": 0
+    },
+    "White Belt": {
+      "roundDurationSec": 300,
+      "restDurationSec": 60,
+      "numRounds": 0
+    },
+    "Blue Belt": {
+      "roundDurationSec": 360,
+      "restDurationSec": 60,
+      "numRounds": 0
+    },
+    "Purple Belt": {
+      "roundDurationSec": 420,
+      "restDurationSec": 60,
+      "numRounds": 0
+    },
+    "Brown Belt": {
+      "roundDurationSec": 480,
+      "restDurationSec": 60,
+      "numRounds": 0
+    },
+    "Black Belt": {
+      "roundDurationSec": 600,
+      "restDurationSec": 60,
+      "numRounds": 0
+    }
   },
   "presetOverrides": {
-    "kids": { "roundDurationSec": 15 },
-    "marathon_roll": { "restDurationSec": 10 }
+    "kids": {
+      "roundDurationSec": 15
+    },
+    "marathon_roll": {
+      "restDurationSec": 10
+    }
   },
   "weather": {
     "enabled": true,
@@ -42,32 +74,166 @@
     "pollIntervalMin": 10
   },
   "schedule": [
-    { "dayOfWeek": "Monday", "startTime": "12:00", "endTime": "13:00", "title": "Adult Noon Class", "classType": "adult_basics" },
-    { "dayOfWeek": "Monday", "startTime": "17:30", "endTime": "18:30", "title": "Kids Jiu-Jitsu Basics", "classType": "kids" },
-    { "dayOfWeek": "Monday", "startTime": "18:30", "endTime": "19:30", "title": "Adult Jiu-Jitsu Basics", "classType": "adult_basics" },
-    { "dayOfWeek": "Monday", "startTime": "19:30", "endTime": "20:00", "title": "Drill Only", "classType": "drill" },
-    { "dayOfWeek": "Monday", "startTime": "20:00", "endTime": "21:00", "title": "Marathon Roll", "classType": "marathon_roll" },
-
-    { "dayOfWeek": "Tuesday", "startTime": "12:00", "endTime": "13:00", "title": "Adult Noon Class", "classType": "adult_basics" },
-    { "dayOfWeek": "Tuesday", "startTime": "17:30", "endTime": "18:30", "title": "Kids Advanced", "classType": "kids_advanced" },
-    { "dayOfWeek": "Tuesday", "startTime": "18:30", "endTime": "19:30", "title": "Adult Jiu-Jitsu All Levels", "classType": "adult_all_levels" },
-    { "dayOfWeek": "Tuesday", "startTime": "19:30", "endTime": "21:00", "title": "Adult Advanced", "classType": "adult_advanced" },
-
-    { "dayOfWeek": "Wednesday", "startTime": "17:30", "endTime": "18:30", "title": "Kids Jiu-Jitsu Basics", "classType": "kids" },
-    { "dayOfWeek": "Wednesday", "startTime": "18:30", "endTime": "20:00", "title": "Adult Advanced", "classType": "adult_advanced" },
-
-    { "dayOfWeek": "Thursday", "startTime": "12:00", "endTime": "13:00", "title": "Adult Noon Class", "classType": "adult_basics" },
-    { "dayOfWeek": "Thursday", "startTime": "17:30", "endTime": "18:30", "title": "Kids Advanced", "classType": "kids_advanced" },
-    { "dayOfWeek": "Thursday", "startTime": "18:30", "endTime": "19:30", "title": "Adult Jiu-Jitsu All Levels", "classType": "adult_all_levels" },
-    { "dayOfWeek": "Thursday", "startTime": "19:30", "endTime": "21:00", "title": "Adult Advanced", "classType": "adult_advanced" },
-
-    { "dayOfWeek": "Friday", "startTime": "12:00", "endTime": "13:00", "title": "Adult Noon Class", "classType": "adult_basics" },
-    { "dayOfWeek": "Friday", "startTime": "18:30", "endTime": "19:30", "title": "Adult Jiu-Jitsu Basics", "classType": "adult_basics" },
-    { "dayOfWeek": "Friday", "startTime": "19:30", "endTime": "20:00", "title": "Drill Only", "classType": "drill" },
-    { "dayOfWeek": "Friday", "startTime": "20:00", "endTime": "21:00", "title": "Marathon Roll", "classType": "marathon_roll" },
-
-    { "dayOfWeek": "Saturday", "startTime": "09:45", "endTime": "10:45", "title": "Kids Basics", "classType": "kids" },
-    { "dayOfWeek": "Saturday", "startTime": "11:00", "endTime": "12:00", "title": "Kids No-Gi", "classType": "kids_nogi" },
-    { "dayOfWeek": "Saturday", "startTime": "12:00", "endTime": "14:00", "title": "Open Mat", "classType": "open_mat" }
+    {
+      "dayOfWeek": "Monday",
+      "startTime": "12:00",
+      "endTime": "13:00",
+      "title": "Adult Noon Class",
+      "classType": "adult_basics"
+    },
+    {
+      "dayOfWeek": "Monday",
+      "startTime": "17:30",
+      "endTime": "18:30",
+      "title": "Kids Jiu-Jitsu Basics",
+      "classType": "kids"
+    },
+    {
+      "dayOfWeek": "Monday",
+      "startTime": "18:45",
+      "endTime": "19:45",
+      "title": "Adult Jiu-Jitsu Basics",
+      "classType": "adult_basics"
+    },
+    {
+      "dayOfWeek": "Monday",
+      "startTime": "19:30",
+      "endTime": "20:00",
+      "title": "Drill Only",
+      "classType": "drill"
+    },
+    {
+      "dayOfWeek": "Monday",
+      "startTime": "20:00",
+      "endTime": "21:00",
+      "title": "Marathon Roll - Adults",
+      "classType": "marathon_roll"
+    },
+    {
+      "dayOfWeek": "Tuesday",
+      "startTime": "12:00",
+      "endTime": "13:00",
+      "title": "Adult Noon Class",
+      "classType": "adult_basics"
+    },
+    {
+      "dayOfWeek": "Tuesday",
+      "startTime": "17:30",
+      "endTime": "18:30",
+      "title": "Kids Advanced",
+      "classType": "kids_advanced"
+    },
+    {
+      "dayOfWeek": "Tuesday",
+      "startTime": "18:30",
+      "endTime": "19:30",
+      "title": "Adult Jiu-Jitsu, all levels",
+      "classType": "adult_all_levels"
+    },
+    {
+      "dayOfWeek": "Tuesday",
+      "startTime": "19:30",
+      "endTime": "21:00",
+      "title": "Adult Advanced",
+      "classType": "adult_advanced"
+    },
+    {
+      "dayOfWeek": "Wednesday",
+      "startTime": "17:30",
+      "endTime": "18:30",
+      "title": "Kids Jiu-Jitsu Basics",
+      "classType": "kids"
+    },
+    {
+      "dayOfWeek": "Wednesday",
+      "startTime": "18:45",
+      "endTime": "20:15",
+      "title": "Adult Advanced",
+      "classType": "adult_advanced"
+    },
+    {
+      "dayOfWeek": "Thursday",
+      "startTime": "12:00",
+      "endTime": "13:00",
+      "title": "Adult Noon Class",
+      "classType": "adult_basics"
+    },
+    {
+      "dayOfWeek": "Thursday",
+      "startTime": "17:30",
+      "endTime": "18:30",
+      "title": "Kids Advanced",
+      "classType": "kids_advanced"
+    },
+    {
+      "dayOfWeek": "Thursday",
+      "startTime": "18:30",
+      "endTime": "19:30",
+      "title": "Adult Jiu-Jitsu, all levels",
+      "classType": "adult_all_levels"
+    },
+    {
+      "dayOfWeek": "Thursday",
+      "startTime": "19:30",
+      "endTime": "21:00",
+      "title": "Adult Advanced",
+      "classType": "adult_advanced"
+    },
+    {
+      "dayOfWeek": "Friday",
+      "startTime": "12:00",
+      "endTime": "13:00",
+      "title": "Adult Noon Class",
+      "classType": "adult_basics"
+    },
+    {
+      "dayOfWeek": "Friday",
+      "startTime": "18:30",
+      "endTime": "19:30",
+      "title": "Adult Jiu-Jitsu Basics",
+      "classType": "adult_basics"
+    },
+    {
+      "dayOfWeek": "Friday",
+      "startTime": "19:30",
+      "endTime": "20:00",
+      "title": "Drill Only",
+      "classType": "drill"
+    },
+    {
+      "dayOfWeek": "Friday",
+      "startTime": "20:00",
+      "endTime": "21:00",
+      "title": "Marathon Roll- Adults",
+      "classType": "marathon_roll"
+    },
+    {
+      "dayOfWeek": "Saturday",
+      "startTime": "08:00",
+      "endTime": "09:00",
+      "title": "Women's Private Group Class",
+      "classType": "adult_basics"
+    },
+    {
+      "dayOfWeek": "Saturday",
+      "startTime": "09:45",
+      "endTime": "10:45",
+      "title": "Kids Basics",
+      "classType": "kids"
+    },
+    {
+      "dayOfWeek": "Saturday",
+      "startTime": "11:00",
+      "endTime": "12:00",
+      "title": "Kids No-Gi",
+      "classType": "kids_nogi"
+    },
+    {
+      "dayOfWeek": "Saturday",
+      "startTime": "12:00",
+      "endTime": "14:00",
+      "title": "Open Mat",
+      "classType": "open_mat"
+    }
   ]
 }
