@@ -65,7 +65,14 @@
     }
 
     #clock {
-      font-family: 'DSEG7', sans-serif;
+      font-family: sans-serif;
+      color: white;
+      font-weight: bold;
+    }
+
+    .clock-ampm {
+      font-size: 0.6em;
+      vertical-align: baseline;
     }
 
     #day-of-week {
@@ -151,13 +158,13 @@
     #round-section.active {
       border: 2px solid var(--text-round);
       border-radius: 0.5rem;
-      padding: 0.5vh 1vw;
+      padding: 1.5vh 1vw;
     }
 
     #rest-section.active {
       border: 2px solid var(--text-rest);
       border-radius: 0.5rem;
-      padding: 0.5vh 1vw;
+      padding: 1.5vh 1vw;
     }
 
     /* Round counter */
@@ -230,7 +237,7 @@
     #class-progress {
       position: absolute;
       top: calc(2vh + clamp(3rem, 6vh, 8rem) + 1.5vh);
-      left: calc(3vw + clamp(3rem, 6vh, 8rem) + 1.5vw);
+      right: 3vw;
       display: none;
     }
 
@@ -479,7 +486,7 @@
 
     #round-list {
       display: none;
-      font-family: 'DSEG7', sans-serif;
+      font-family: sans-serif;
       font-size: clamp(0.6rem, 1.2vw, 1.2rem);
       color: var(--text-label);
       line-height: 1.8;
@@ -493,6 +500,7 @@
 
     #round-list .round-item {
       white-space: nowrap;
+      padding: 0.1em 0.4em;
     }
 
     #round-list .round-item.past {
@@ -504,7 +512,6 @@
       font-weight: 700;
       background: var(--accent-red);
       color: #fff;
-      padding: 0.1em 0.4em;
       border-radius: 0.3em;
     }
 
@@ -512,6 +519,19 @@
       color: var(--text-muted);
       display: inline-block;
       min-width: 2.5em;
+    }
+
+    .overtime-badge {
+      font-size: 0.75em;
+      color: var(--accent-red);
+      border: 1px solid var(--accent-red);
+      padding: 0.1em 0.4em;
+      border-radius: 0.3em;
+    }
+
+    #round-list .round-item.current .overtime-badge {
+      color: #fff;
+      border-color: #fff;
     }
 
     #next-class-display {
@@ -601,7 +621,7 @@
   <div id="clock-area">
     <span id="day-of-week"></span>
     <span id="clock">00:00:00</span>
-    <span id="temperature"></span>
+    <span id="temperature" style="display:none;"></span>
   </div>
 
   <!-- Main timer area - centered -->

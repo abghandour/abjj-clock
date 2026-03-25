@@ -97,11 +97,12 @@ const DEFAULT_CONFIG = {
 
 // App-wide configurable settings (overridden by config.json at runtime)
 const APP_SETTINGS = {
+  scheduleEnabled: localStorage.getItem('bjj-timer-schedule-enabled') !== 'false',
   minPrepCountdownSec: 5,
   alertThresholdSec: 5,
   audio: {
     countdownBeepFrequency: 800,
-    countdownBeepDuration: 0.1,
+    countdownBeepDuration: 0.3,
     prepBeepBaseFrequency: 500,
     prepBeepFrequencyStep: 100,
     prepBeepDuration: 0.15,
@@ -472,13 +473,18 @@ class AudioManager {
       if (!this._ensureContext()) return;
       const osc = this.audioCtx.createOscillator();
       const gain = this.audioCtx.createGain();
+      const vol = APP_SETTINGS.audio.volume;
+      const now = this.audioCtx.currentTime;
       osc.type = 'sine';
       osc.frequency.value = frequency;
-      gain.gain.value = APP_SETTINGS.audio.volume;
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(vol, now + 0.01);
+      gain.gain.setValueAtTime(vol, now + duration - 0.02);
+      gain.gain.linearRampToValueAtTime(0, now + duration);
       osc.connect(gain);
       gain.connect(this.audioCtx.destination);
-      osc.start();
-      osc.stop(this.audioCtx.currentTime + duration);
+      osc.start(now);
+      osc.stop(now + duration);
     } catch (e) {
       this.disabled = true;
     }
@@ -488,7 +494,34 @@ class AudioManager {
    * Short beep for countdown (configurable frequency/duration).
    */
   playCountdownBeep() {
-    this._playTone(APP_SETTINGS.audio.countdownBeepFrequency, APP_SETTINGS.audio.countdownBeepDuration);
+    try {
+      if (!this._ensureContext()) return;
+      const ctx = this.audioCtx;
+      const now = ctx.currentTime;
+      const vol = APP_SETTINGS.audio.volume;
+
+      const osc = ctx.createOscillator();
+      const filter = ctx.createBiquadFilter();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.value = 440;
+
+      filter.type = 'lowpass';
+      filter.frequency.value = 600; // cut highs for muffled effect
+      filter.Q.value = 0.5;
+
+      gain.gain.setValueAtTime(vol * 6, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.35);
+    } catch (e) {
+      // Silently disable on failure
+    }
   }
 
   /**
@@ -505,14 +538,9 @@ class AudioManager {
    */
   playRoundStartFanfare() {
     try {
-      if (!this._ensureContext()) return;
-      const now = this.audioCtx.currentTime;
-      const vol = APP_SETTINGS.audio.volume;
-      const strikes = 3;
-      const gap = 0.18;
-      for (let i = 0; i < strikes; i++) {
-        this._playBellStrike(now + i * gap, vol, 0.4);
-      }
+      const audio = new Audio('boxing-bell-single.mp3');
+      audio.volume = APP_SETTINGS.audio.volume;
+      audio.play();
     } catch (e) {
       // Silently disable on failure
     }
@@ -523,10 +551,9 @@ class AudioManager {
    */
   playEndOfRoundBeep() {
     try {
-      if (!this._ensureContext()) return;
-      const now = this.audioCtx.currentTime;
-      const vol = Math.min(APP_SETTINGS.audio.volume * 1.3, 1.0);
-      this._playBellStrike(now, vol, 0.8);
+      const audio = new Audio('boxing-bell.mp3');
+      audio.volume = APP_SETTINGS.audio.volume;
+      audio.play();
     } catch (e) {
       // Silently disable on failure
     }
@@ -580,31 +607,9 @@ class AudioManager {
    */
   playEndOfClassRing() {
     try {
-      if (!this._ensureContext()) return;
-      const now = this.audioCtx.currentTime;
-      const notes = [784, 659, 523]; // G5, E5, C5
-      const vol = Math.min(APP_SETTINGS.audio.volume * 2, 1.0); // louder
-      const dur = 0.5;
-      const gap = 0.15;
-      const patternLen = notes.length * (dur + gap);
-      const repeatPause = 0.4;
-
-      for (let rep = 0; rep < 3; rep++) {
-        const offset = rep * (patternLen + repeatPause);
-        notes.forEach((freq, i) => {
-          const osc = this.audioCtx.createOscillator();
-          const gain = this.audioCtx.createGain();
-          osc.type = 'triangle';
-          osc.frequency.value = freq;
-          const t = now + offset + i * (dur + gap);
-          gain.gain.setValueAtTime(vol, t);
-          gain.gain.exponentialRampToValueAtTime(0.01, t + dur);
-          osc.connect(gain);
-          gain.connect(this.audioCtx.destination);
-          osc.start(t);
-          osc.stop(t + dur);
-        });
-      }
+      const audio = new Audio('boxing-bell-single.mp3');
+      audio.volume = APP_SETTINGS.audio.volume;
+      audio.play();
     } catch (e) {
       // Silently disable on failure
     }
@@ -695,7 +700,13 @@ class Renderer {
   updateClockDisplay() {
     const now = new Date();
     if (this.clockEl) {
-      this.clockEl.textContent = now.toLocaleTimeString('en-US', { hour12: false });
+      const time = now.toLocaleTimeString('en-US', { hour12: true });
+      const match = time.match(/^(.*\s?)(AM|PM)$/i);
+      if (match) {
+        this.clockEl.innerHTML = `${match[1]}<span class="clock-ampm">${match[2]}</span>`;
+      } else {
+        this.clockEl.textContent = time;
+      }
     }
     if (this.dayOfWeekEl) {
       this.dayOfWeekEl.textContent = now.toLocaleDateString('en-US', { weekday: 'long' });
@@ -709,6 +720,7 @@ class Renderer {
   updateTemperature(text) {
     if (this.temperatureEl) {
       this.temperatureEl.textContent = text;
+      this.temperatureEl.style.display = text ? '' : 'none';
     }
   }
 
@@ -934,7 +946,7 @@ class Renderer {
    * @param {number} currentRound - Current round (1-based, 0 = idle/prep)
    * @param {string} [presetName] - Optional preset name to show as header
    */
-  updateRoundList(durations, currentRound, presetName) {
+  updateRoundList(durations, currentRound, presetName, restDurations, restDurationSec, remainingClassSec) {
     if (!this.roundListEl) return;
     if (!durations || durations.length === 0) {
       this.roundListEl.classList.remove('active');
@@ -958,16 +970,54 @@ class Renderer {
       } else if (lower === 'inv. pyramid') {
         icon = `<svg ${_s} fill="currentColor"><rect x="1" y="5" width="3" height="17" rx="0.5"/><rect x="5.5" y="11" width="3" height="11" rx="0.5"/><rect x="10" y="16" width="3" height="6" rx="0.5"/><rect x="14.5" y="11" width="3" height="11" rx="0.5"/><rect x="19" y="5" width="3" height="17" rx="0.5"/></svg>`;
       }
-      html += `<div style="color:var(--accent-green);font-weight:700;margin-bottom:0.5em;">${icon}${presetName}</div>`;
+      const totalSec = durations.reduce((a, b) => a + b, 0);
+      const totalMin = Math.round(totalSec / 60);
+      html += `<div style="color:var(--accent-green);font-weight:700;margin-bottom:0.5em;">${icon}${presetName} <span style="font-weight:400;color:var(--text-muted);font-size:0.8em;">${totalMin}m</span></div>`;
     }
+
+    // Calculate cumulative end time for each round to find overtime
+    let overtimeMinutes = []; // per-round: 0 if not overtime, else minutes over
+    if (remainingClassSec > 0) {
+      let cumulative = 0;
+      for (let i = 0; i < durations.length; i++) {
+        if (i > 0) {
+          const restIdx = i - 1;
+          cumulative += restDurations ? restDurations[restIdx % restDurations.length] : (restDurationSec || 0);
+        }
+        cumulative += durations[i];
+        if (cumulative > remainingClassSec) {
+          overtimeMinutes.push(Math.ceil((cumulative - remainingClassSec) / 60));
+        } else {
+          overtimeMinutes.push(0);
+        }
+      }
+    }
+
     durations.forEach((dur, i) => {
       const roundNum = i + 1;
       let cls = 'round-item';
       if (roundNum < currentRound) cls += ' past';
       else if (roundNum === currentRound) cls += ' current';
-      html += `<div class="${cls}"><span class="round-num">R${roundNum}</span> ${formatTime(dur)}</div>`;
+      const ot = overtimeMinutes[i] || 0;
+      const overtimeTag = ot > 0 ? ` <span class="overtime-badge">${ot}m overtime</span>` : '';
+      html += `<div class="${cls}"><span class="round-num">R${roundNum}</span> ${formatTime(dur)}${overtimeTag}</div>`;
     });
     this.roundListEl.innerHTML = html;
+  }
+
+  /**
+   * Get remaining seconds in the current active class from the schedule display.
+   * @returns {number} Remaining seconds, or 0 if no active class.
+   */
+  getRemainingClassSec() {
+    const scheduleEl = document.getElementById('schedule-display');
+    const classTimeEl = scheduleEl ? scheduleEl.querySelector('.class-time') : null;
+    if (!classTimeEl) return 0;
+    const text = classTimeEl.textContent;
+    const hMatch = text.match(/(\d+)h/);
+    const mMatch = text.match(/(\d+)m/);
+    if (!hMatch && !mMatch) return 0;
+    return ((hMatch ? parseInt(hMatch[1], 10) : 0) * 60 + (mMatch ? parseInt(mMatch[1], 10) : 0)) * 60;
   }
 
   /**
@@ -1032,9 +1082,17 @@ class Renderer {
     const dayLabel = isToday ? '' : `${nextClass.dayOfWeek} `;
     const countdownPart = isToday ? ` <span class="next-countdown">(${countdownStr})</span>` : '';
 
+    const fmtTime = (t) => {
+      const [h, m] = t.split(':').map(Number);
+      const suffix = h >= 12 ? 'PM' : 'AM';
+      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      const time = m === 0 ? `${h12}` : `${h12}:${m.toString().padStart(2, '0')}`;
+      return `${time}<span class="clock-ampm">${suffix}</span>`;
+    };
+
     this.nextClassDisplayEl.innerHTML =
       `<span class="next-title">Next: ${nextClass.title}</span><br>` +
-      `<span class="next-time">${dayLabel}${nextClass.startTime}</span>` +
+      `<span class="next-time">${dayLabel}${fmtTime(nextClass.startTime)}</span>` +
       countdownPart;
   }
 
@@ -1077,10 +1135,17 @@ class Renderer {
 
     // Next class: show title, classType, day, start time
     if (nextClass) {
+      const fmtTime = (t) => {
+        const [h, m] = t.split(':').map(Number);
+        const suffix = h >= 12 ? 'PM' : 'AM';
+        const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+        const time = m === 0 ? `${h12}` : `${h12}:${m.toString().padStart(2, '0')}`;
+        return `${time}<span class="clock-ampm">${suffix}</span>`;
+      };
       this.scheduleDisplayEl.innerHTML =
         `<span class="class-title">Next: ${nextClass.title}</span> ` +
         `<span class="class-type">${nextClass.classType}</span><br>` +
-        `<span class="class-time">${nextClass.dayOfWeek} at ${nextClass.startTime}</span>`;
+        `<span class="class-time">${nextClass.dayOfWeek} at ${fmtTime(nextClass.startTime)}</span>`;
       return;
     }
 
@@ -1101,6 +1166,13 @@ class ClassProgressRenderer {
     this.canvas = document.getElementById('class-progress');
     this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
     this._activeClass = null;
+    this._logoImg = null;
+    const img = new Image();
+    img.src = 'logo.png';
+    img.onload = () => {
+      this._logoImg = img;
+      this.draw();
+    };
   }
 
   /**
@@ -1159,6 +1231,17 @@ class ClassProgressRenderer {
     const sliceAngle = (2 * Math.PI) / totalSlices;
     const startAngle = -Math.PI / 2; // 12 o'clock
 
+    // Determine single color based on elapsed fraction
+    const elapsedFraction = elapsed / totalMin;
+    let fillColor;
+    if (elapsedFraction >= 0.9) {
+      fillColor = '#ff4444';
+    } else if (elapsedFraction >= 0.5) {
+      fillColor = '#ffcc00';
+    } else {
+      fillColor = '#00ff88';
+    }
+
     // Draw remaining slices
     for (let i = slicesGone; i < totalSlices; i++) {
       const a1 = startAngle + i * sliceAngle;
@@ -1169,15 +1252,7 @@ class ClassProgressRenderer {
       ctx.arc(cx, cy, radius, a1, a2);
       ctx.closePath();
 
-      // Fade from green to red as time runs out
-      const progress = i / totalSlices;
-      if (progress < 0.5) {
-        ctx.fillStyle = '#00ff88';
-      } else if (progress < 0.75) {
-        ctx.fillStyle = '#ffcc00';
-      } else {
-        ctx.fillStyle = '#ff4444';
-      }
+      ctx.fillStyle = fillColor;
       ctx.fill();
     }
 
@@ -1186,6 +1261,12 @@ class ClassProgressRenderer {
     ctx.arc(cx, cy, radius * 0.45, 0, 2 * Math.PI);
     ctx.fillStyle = '#1a1a2e';
     ctx.fill();
+
+    // Draw logo in center
+    if (this._logoImg) {
+      const logoSize = radius * 1.5;
+      ctx.drawImage(this._logoImg, cx - logoSize / 2, cy - logoSize / 2, logoSize, logoSize);
+    }
   }
 }
 
@@ -1310,8 +1391,26 @@ class OverlayManager {
   handleKey(key) {
     if (!this._open) return;
 
-    // Schedule overlay: any key closes
+    // Schedule overlay: +/- toggle, / refresh, any other key closes
     if (this._mode === 'schedule') {
+      if (key === '-') {
+        APP_SETTINGS.scheduleEnabled = false;
+        localStorage.setItem('bjj-timer-schedule-enabled', 'false');
+        if (this._onScheduleToggle) this._onScheduleToggle(false);
+        this._renderSchedule();
+        return;
+      }
+      if (key === '+') {
+        APP_SETTINGS.scheduleEnabled = true;
+        localStorage.setItem('bjj-timer-schedule-enabled', 'true');
+        if (this._onScheduleToggle) this._onScheduleToggle(true);
+        this._renderSchedule();
+        return;
+      }
+      if (key === '/') {
+        this.closeOverlay();
+        return;
+      }
       this.closeOverlay();
       return;
     }
@@ -1969,8 +2068,8 @@ class OverlayManager {
       rows += `<span class="mg-key">${i}</span>` +
               `<span class="mg-icon">${icon}</span>` +
               `<span class="mg-name">${name}</span>` +
-              `<span class="mg-note" style="color:var(--text-round);font-family:'DSEG7',sans-serif;">${roundStr}</span>` +
-              `<span class="mg-note" style="color:var(--text-rest);font-family:'DSEG7',sans-serif;">${restStr}</span>`;
+              `<span class="mg-note" style="color:var(--text-round);">${roundStr}</span>` +
+              `<span class="mg-note" style="color:var(--text-rest);">${restStr}</span>`;
     });
 
     const _arrow = '<svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg>';
@@ -2053,7 +2152,8 @@ class OverlayManager {
       const [h, m] = t.split(':').map(Number);
       const suffix = h >= 12 ? 'pm' : 'am';
       const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-      return m === 0 ? `${h12}${suffix}` : `${h12}:${m.toString().padStart(2, '0')}${suffix}`;
+      const time = m === 0 ? `${h12}` : `${h12}:${m.toString().padStart(2, '0')}`;
+      return `${time}<span class="clock-ampm">${suffix}</span>`;
     };
 
     let cols = '';
@@ -2069,14 +2169,23 @@ class OverlayManager {
       cols += `<div class="sched-day"><div class="sched-day-name">${dayAbbr[d]}</div>${cells}</div>`;
     });
 
+    const enabled = APP_SETTINGS.scheduleEnabled;
+    const statusColor = enabled ? 'var(--accent-green)' : 'var(--accent-red)';
+    const statusText = enabled ? 'ON' : 'OFF';
+    const toggleHint = enabled
+      ? '<span style="color:var(--accent-red);">−</span> Disable'
+      : '<span style="color:var(--accent-green);">+</span> Enable';
+
     this.overlayEl.innerHTML =
       `<div class="schedule-overlay">`
-      + `<div class="schedule-title">Weekly Schedule</div>`
+      + `<div class="schedule-title">Weekly Schedule <span style="color:${statusColor};font-size:0.6em;">${statusText}</span></div>`
       + `<div class="schedule-grid">${cols}</div>`
-      + `<div class="schedule-hint">Press any key to close</div>`
+      + `<div class="schedule-hint">${toggleHint} schedule features &nbsp;·&nbsp; Any other key to close</div>`
       + `</div>`;
     this.overlayEl.classList.add('active');
   }
+
+
 
 }
 
@@ -2127,6 +2236,8 @@ class InputHandler {
       if (suffix === 'Enter') return 'Enter';
       if (suffix === 'Decimal') return 'Backspace'; // Use decimal as backspace for convenience
       if (suffix === 'Clear') return 'Clear';
+      if (suffix === 'Add') return '+';
+      if (suffix === 'Subtract') return '-';
       return null;
     }
 
@@ -2134,6 +2245,8 @@ class InputHandler {
     if (key >= '0' && key <= '9') return key;
     if (key === '*') return '*';
     if (key === '/') return '/';
+    if (key === '+') return '+';
+    if (key === '-') return '-';
     if (key === 'Enter') return 'Enter';
     if (key === 'Backspace') return 'Backspace';
     if (key === 'Clear' || key === 'Delete') return 'Clear';
@@ -2193,7 +2306,7 @@ class InputHandler {
           this.renderer.hideRoundsOver();
           // Re-show round list preview if a preset is still active
           if (rd) {
-            this.renderer.updateRoundList(rd, 0, this.state._presetName);
+            this.renderer.updateRoundList(rd, 0, this.state._presetName, this.state.restDurations, this.state.config.restDurationSec, this.renderer.getRemainingClassSec());
           } else {
             this.renderer.hideRoundList();
           }
@@ -2214,7 +2327,7 @@ class InputHandler {
             this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
             this.renderer.updateRoundCounter(0, this.state.config.numRounds);
             if (this.state.roundDurations) {
-              this.renderer.updateRoundList(this.state.roundDurations, 0, this.state._presetName);
+              this.renderer.updateRoundList(this.state.roundDurations, 0, this.state._presetName, this.state.restDurations, this.state.config.restDurationSec, this.renderer.getRemainingClassSec());
             }
           }
         }
@@ -2382,7 +2495,7 @@ class InputHandler {
       this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
       this.renderer.updateRoundCounter(0, this.state.config.numRounds);
       if (this.state.roundDurations) {
-        this.renderer.updateRoundList(this.state.roundDurations, 0, this.state._presetName);
+        this.renderer.updateRoundList(this.state.roundDurations, 0, this.state._presetName, this.state.restDurations, this.state.config.restDurationSec, this.renderer.getRemainingClassSec());
       } else {
         this.renderer.hideRoundList();
       }
@@ -2450,7 +2563,10 @@ class WeatherManager {
       const w = APP_SETTINGS.weather;
       const unit = w.units === 'celsius' ? 'celsius' : 'fahrenheit';
       const url = `https://api.open-meteo.com/v1/forecast?latitude=${w.latitude}&longitude=${w.longitude}&current=temperature_2m&temperature_unit=${unit}`;
-      const resp = await fetch(url);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const resp = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
       if (!resp.ok) return;
       const data = await resp.json();
       if (data && data.current && typeof data.current.temperature_2m === 'number') {
@@ -2459,7 +2575,7 @@ class WeatherManager {
         this.onUpdate(`${temp}${symbol}`);
       }
     } catch (e) {
-      // Silently fail — temperature display just stays empty or stale
+      // Silently fail — temperature display just stays hidden or stale
     }
   }
 }
@@ -2818,23 +2934,10 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
 
     if (isDebug) {
       const title = prompt('Class title:', 'Adult Basics') || 'Adult Basics';
-      const minBefore = parseInt(prompt('Minutes before class end:', '15'), 10) || 15;
+      const minInput = parseInt(prompt('Minutes before class end (negative = minutes before class starts):', '15'), 10) || 15;
 
-      // Build a fake schedule entry that ends minBefore minutes from now
       const now = new Date();
-      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       const dayOfWeek = VALID_DAYS[now.getDay() === 0 ? 6 : now.getDay() - 1];
-      const endMin = now.getHours() * 60 + now.getMinutes() + minBefore;
-      const endH = Math.floor(endMin / 60) % 24;
-      const endM = endMin % 60;
-      const endTime = String(endH).padStart(2, '0') + ':' + String(endM).padStart(2, '0');
-
-      // Class started 60 minutes before end (or at least started before now)
-      const classDurationMin = Math.max(minBefore + 15, 60);
-      const startMin = endMin - classDurationMin;
-      const startH = Math.floor(((startMin % 1440) + 1440) % 1440 / 60);
-      const startM = ((startMin % 60) + 60) % 60;
-      const startTime = String(startH).padStart(2, '0') + ':' + String(startM).padStart(2, '0');
 
       // Map title to a classType (best guess)
       const titleLower = title.toLowerCase();
@@ -2848,8 +2951,38 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       else if (titleLower.includes('marathon')) classType = 'marathon_roll';
       else if (titleLower.includes('open')) classType = 'open_mat';
 
-      debugScheduleEntry = { dayOfWeek, startTime, endTime, title, classType };
-      console.log('[DEBUG] Injected schedule entry:', debugScheduleEntry);
+      if (minInput < 0) {
+        // Negative: class starts in |minInput| minutes from now
+        const minUntilStart = Math.abs(minInput);
+        const nowMin = now.getHours() * 60 + now.getMinutes();
+        const startMin = nowMin + minUntilStart;
+        const startH = Math.floor(startMin / 60) % 24;
+        const startM = startMin % 60;
+        const startTime = String(startH).padStart(2, '0') + ':' + String(startM).padStart(2, '0');
+        const endMin = startMin + 60; // 60 minute class
+        const endH = Math.floor(endMin / 60) % 24;
+        const endM = endMin % 60;
+        const endTime = String(endH).padStart(2, '0') + ':' + String(endM).padStart(2, '0');
+
+        debugScheduleEntry = { dayOfWeek, startTime, endTime, title, classType };
+        console.log('[DEBUG] Injected future schedule entry (starts in ' + minUntilStart + 'm):', debugScheduleEntry);
+      } else {
+        // Positive: class ends in minInput minutes from now (already in class)
+        const minBefore = minInput;
+        const endMin = now.getHours() * 60 + now.getMinutes() + minBefore;
+        const endH = Math.floor(endMin / 60) % 24;
+        const endM = endMin % 60;
+        const endTime = String(endH).padStart(2, '0') + ':' + String(endM).padStart(2, '0');
+
+        const classDurationMin = Math.max(minBefore + 15, 60);
+        const startMin = endMin - classDurationMin;
+        const startH = Math.floor(((startMin % 1440) + 1440) % 1440 / 60);
+        const startM = ((startMin % 60) + 60) % 60;
+        const startTime = String(startH).padStart(2, '0') + ':' + String(startM).padStart(2, '0');
+
+        debugScheduleEntry = { dayOfWeek, startTime, endTime, title, classType };
+        console.log('[DEBUG] Injected active schedule entry (ends in ' + minBefore + 'm):', debugScheduleEntry);
+      }
     }
 
     // 1. Load persisted config
@@ -2891,13 +3024,16 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         renderer.updateRoundCounter(s.currentRound, s.roundDurations ? s.roundDurations.length : s.config.numRounds);
         // Update round list if training preset is active
         if (s.roundDurations) {
-          renderer.updateRoundList(s.roundDurations, s.currentRound, s._presetName);
+          renderer.updateRoundList(s.roundDurations, s.currentRound, s._presetName, s.restDurations, s.config.restDurationSec, renderer.getRemainingClassSec());
         }
         // Re-apply stealth visibility each tick (rest shows/hides based on phase)
         if (renderer.stealth) renderer.applyStealth(s.phase);
       },
       // onPhaseChange — handle transitions and deferred preset loading
       (s, oldPhase, newPhase) => {
+        if (newPhase === PHASES.ROUND) {
+          audioManager.playRoundStartFanfare();
+        }
         if (oldPhase === PHASES.PREP && newPhase === PHASES.ROUND) {
           renderer.hidePrepCountdown();
         }
@@ -2950,7 +3086,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         // Reset round list to preview when session ends (preserve if preset active)
         if (newPhase === PHASES.IDLE) {
           if (s.roundDurations) {
-            renderer.updateRoundList(s.roundDurations, 0, s._presetName);
+            renderer.updateRoundList(s.roundDurations, 0, s._presetName, s.restDurations, s.config.restDurationSec, renderer.getRemainingClassSec());
           } else {
             renderer.hideRoundList();
           }
@@ -2984,10 +3120,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         renderer.applyScreenFlash();
       }
 
-      // Uplifting fanfare when transitioning from PREP to ROUND
-      if (currentPhase === PHASES.PREP && state.phase === PHASES.ROUND) {
-        audioManager.playRoundStartFanfare();
-      }
+      // Uplifting fanfare when transitioning from PREP to ROUND — handled in onPhaseChange
 
       return alert;
     };
@@ -3001,6 +3134,12 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       presetManager,
       // onActiveClassChange
       (activeClass) => {
+        if (!APP_SETTINGS.scheduleEnabled) {
+          renderer.updateScheduleDisplay(null, null, null);
+          renderer.updateNextClassDisplay(null);
+          classProgress.setActiveClass(null);
+          return;
+        }
         const now = new Date();
         const nextClass = scheduleManager.getNextClass(now);
         renderer.updateScheduleDisplay(activeClass, nextClass, null);
@@ -3056,6 +3195,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       },
       // onError
       (errorMsg) => {
+        if (!APP_SETTINGS.scheduleEnabled) return;
         const now = new Date();
         const nextClass = scheduleManager.getNextClass(now);
         renderer.updateScheduleDisplay(null, nextClass, errorMsg);
@@ -3065,9 +3205,24 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
 
     // 8b. Wire up key 9 reset: use active class preset or fall back to DEFAULT_CONFIG
     inputHandler._scheduleManager = scheduleManager;
+    overlayManager._onScheduleToggle = (enabled) => {
+      if (enabled) {
+        const now = new Date();
+        const active = scheduleManager.getActiveClass(now);
+        const next = scheduleManager.getNextClass(now);
+        renderer.updateScheduleDisplay(active, next, null);
+        renderer.updateNextClassDisplay(active ? next : null);
+        classProgress.setActiveClass(active);
+        scheduleManager.startPolling();
+      } else {
+        renderer.updateScheduleDisplay(null, null, null);
+        renderer.updateNextClassDisplay(null);
+        classProgress.setActiveClass(null);
+      }
+    };
     inputHandler._resetCallback = () => {
       const now = new Date();
-      const active = scheduleManager.getActiveClass(now);
+      const active = APP_SETTINGS.scheduleEnabled ? scheduleManager.getActiveClass(now) : null;
       const preset = active ? presetManager.getPreset(active.classType) : null;
       const src = preset || { ...DEFAULT_CONFIG };
       state.config.roundDurationSec = src.roundDurationSec;
@@ -3099,12 +3254,14 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       : scheduleManager.loadConfig();
 
     initSchedule.then(() => {
-      const now = new Date();
-      const active = scheduleManager.getActiveClass(now);
-      const next = scheduleManager.getNextClass(now);
-      renderer.updateScheduleDisplay(active, next, null);
-      renderer.updateNextClassDisplay(active ? next : null);
-      classProgress.setActiveClass(active);
+      if (APP_SETTINGS.scheduleEnabled) {
+        const now = new Date();
+        const active = scheduleManager.getActiveClass(now);
+        const next = scheduleManager.getNextClass(now);
+        renderer.updateScheduleDisplay(active, next, null);
+        renderer.updateNextClassDisplay(active ? next : null);
+        classProgress.setActiveClass(active);
+      }
       scheduleManager.startPolling();
 
       // 10b. Start weather polling (after config loaded so overrides are applied)
@@ -3132,11 +3289,13 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       });
     }, 30 * 60 * 1000);
 
-    // 13. Refresh next class countdown every 60 seconds
+    // 13. Refresh schedule and next class displays every 60 seconds
     setInterval(() => {
+      if (!APP_SETTINGS.scheduleEnabled) return;
       const now = new Date();
       const active = scheduleManager.getActiveClass(now);
       const next = scheduleManager.getNextClass(now);
+      renderer.updateScheduleDisplay(active, next, null);
       renderer.updateNextClassDisplay(active ? next : null);
     }, 60000);
   });

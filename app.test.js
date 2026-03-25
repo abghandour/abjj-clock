@@ -727,3 +727,217 @@ describe('constants', () => {
     expect(VALID_CLASS_TYPES).toContain('open_mat');
   });
 });
+
+
+// ─── ScheduleManager polling and active class transitions ───
+
+describe('ScheduleManager._checkActiveClass', () => {
+  let manager, onActiveClassChange, onError;
+  const schedule = [
+    { dayOfWeek: 'Monday', startTime: '09:00', endTime: '10:00', title: 'Morning', classType: 'adult_basics' },
+    { dayOfWeek: 'Monday', startTime: '18:00', endTime: '19:30', title: 'Evening', classType: 'adult_advanced' },
+  ];
+
+  beforeEach(() => {
+    onActiveClassChange = vi.fn();
+    onError = vi.fn();
+    manager = new ScheduleManager(new ClassPresetManager(), onActiveClassChange, onError);
+    manager._schedule = schedule;
+  });
+
+  it('fires onActiveClassChange when a class becomes active', () => {
+    // Simulate: no class active initially, then class starts
+    // First check: before class (Monday 08:30) — no change from initial null state
+    const before = new Date(2026, 2, 2, 8, 30); // Monday
+    vi.setSystemTime(before);
+    manager._checkActiveClass();
+    // Initial state is null, active is null — no change, no callback
+    expect(onActiveClassChange).not.toHaveBeenCalled();
+
+    // Second check: during class (Monday 09:30) — class becomes active
+    const during = new Date(2026, 2, 2, 9, 30);
+    vi.setSystemTime(during);
+    manager._checkActiveClass();
+    expect(onActiveClassChange).toHaveBeenCalledTimes(1);
+    expect(onActiveClassChange).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Morning' })
+    );
+  });
+
+  it('does not fire onActiveClassChange when active class has not changed', () => {
+    // Check twice during same class
+    const during1 = new Date(2026, 2, 2, 9, 15);
+    vi.setSystemTime(during1);
+    manager._checkActiveClass();
+    expect(onActiveClassChange).toHaveBeenCalledTimes(1);
+
+    onActiveClassChange.mockClear();
+
+    const during2 = new Date(2026, 2, 2, 9, 45);
+    vi.setSystemTime(during2);
+    manager._checkActiveClass();
+    expect(onActiveClassChange).not.toHaveBeenCalled();
+  });
+
+  it('fires onActiveClassChange with null when class ends', () => {
+    // First: during class
+    const during = new Date(2026, 2, 2, 9, 30);
+    vi.setSystemTime(during);
+    manager._checkActiveClass();
+    onActiveClassChange.mockClear();
+
+    // Then: after class ends
+    const after = new Date(2026, 2, 2, 10, 5);
+    vi.setSystemTime(after);
+    manager._checkActiveClass();
+    expect(onActiveClassChange).toHaveBeenCalledWith(null);
+  });
+
+  it('fires onActiveClassChange when transitioning between classes', () => {
+    // During Morning class
+    const morning = new Date(2026, 2, 2, 9, 30);
+    vi.setSystemTime(morning);
+    manager._checkActiveClass();
+    expect(onActiveClassChange).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Morning' })
+    );
+    onActiveClassChange.mockClear();
+
+    // Gap between classes
+    const gap = new Date(2026, 2, 2, 12, 0);
+    vi.setSystemTime(gap);
+    manager._checkActiveClass();
+    expect(onActiveClassChange).toHaveBeenCalledWith(null);
+    onActiveClassChange.mockClear();
+
+    // During Evening class
+    const evening = new Date(2026, 2, 2, 18, 30);
+    vi.setSystemTime(evening);
+    manager._checkActiveClass();
+    expect(onActiveClassChange).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Evening' })
+    );
+  });
+});
+
+describe('ScheduleManager.startPolling / stopPolling', () => {
+  let manager, onActiveClassChange;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    onActiveClassChange = vi.fn();
+    manager = new ScheduleManager(new ClassPresetManager(), onActiveClassChange, () => {});
+    manager._schedule = [
+      { dayOfWeek: 'Monday', startTime: '09:00', endTime: '10:00', title: 'Morning', classType: 'adult_basics' },
+    ];
+  });
+
+  afterEach(() => {
+    manager.stopPolling();
+    vi.useRealTimers();
+  });
+
+  it('checks active class immediately on startPolling', () => {
+    const now = new Date(2026, 2, 2, 9, 30);
+    vi.setSystemTime(now);
+    manager.startPolling();
+    // Class is active and differs from initial null — callback fires
+    expect(onActiveClassChange).toHaveBeenCalledTimes(1);
+    expect(onActiveClassChange).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Morning' })
+    );
+  });
+
+  it('checks active class every 30 seconds during polling', () => {
+    const now = new Date(2026, 2, 2, 8, 0);
+    vi.setSystemTime(now);
+    manager.startPolling();
+    // Initial state is null, no class active — no change callback
+    expect(onActiveClassChange).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(30000);
+    // Still no class — no change
+    expect(onActiveClassChange).not.toHaveBeenCalled();
+
+    // Advance to class start time
+    vi.setSystemTime(new Date(2026, 2, 2, 9, 0));
+    vi.advanceTimersByTime(30000);
+    expect(onActiveClassChange).toHaveBeenCalledTimes(1);
+    expect(onActiveClassChange).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Morning' })
+    );
+  });
+
+  it('stops polling when stopPolling is called', () => {
+    const now = new Date(2026, 2, 2, 8, 0);
+    vi.setSystemTime(now);
+    manager.startPolling();
+    // No class active, no change from initial null
+    expect(onActiveClassChange).not.toHaveBeenCalled();
+
+    manager.stopPolling();
+    vi.setSystemTime(new Date(2026, 2, 2, 9, 0));
+    vi.advanceTimersByTime(60000);
+    expect(onActiveClassChange).not.toHaveBeenCalled();
+  });
+
+  it('detects class end during polling', () => {
+    // Start during class
+    vi.setSystemTime(new Date(2026, 2, 2, 9, 30));
+    manager.startPolling();
+    expect(onActiveClassChange).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Morning' })
+    );
+    onActiveClassChange.mockClear();
+
+    // Advance past class end
+    vi.setSystemTime(new Date(2026, 2, 2, 10, 1));
+    vi.advanceTimersByTime(30000);
+    expect(onActiveClassChange).toHaveBeenCalledWith(null);
+  });
+});
+
+describe('ScheduleManager schedule display updates', () => {
+  let manager;
+  const schedule = [
+    { dayOfWeek: 'Monday', startTime: '09:00', endTime: '10:00', title: 'Morning', classType: 'adult_basics' },
+    { dayOfWeek: 'Monday', startTime: '18:00', endTime: '19:30', title: 'Evening', classType: 'adult_advanced' },
+    { dayOfWeek: 'Wednesday', startTime: '12:00', endTime: '13:00', title: 'Noon', classType: 'kids' },
+  ];
+
+  beforeEach(() => {
+    manager = new ScheduleManager(new ClassPresetManager(), () => {}, () => {});
+    manager._schedule = schedule;
+  });
+
+  it('getActiveClass returns correct class as time progresses through a class', () => {
+    // Start of class
+    expect(manager.getActiveClass(new Date(2026, 2, 2, 9, 0)).title).toBe('Morning');
+    // Middle of class
+    expect(manager.getActiveClass(new Date(2026, 2, 2, 9, 30)).title).toBe('Morning');
+    // Last minute of class
+    expect(manager.getActiveClass(new Date(2026, 2, 2, 9, 59)).title).toBe('Morning');
+    // Class ended
+    expect(manager.getActiveClass(new Date(2026, 2, 2, 10, 0))).toBeNull();
+  });
+
+  it('getNextClass updates as time progresses', () => {
+    // Before first class: next is Morning
+    expect(manager.getNextClass(new Date(2026, 2, 2, 8, 0)).title).toBe('Morning');
+    // During Morning: next is Evening
+    expect(manager.getNextClass(new Date(2026, 2, 2, 9, 30)).title).toBe('Evening');
+    // After Morning, before Evening: next is Evening
+    expect(manager.getNextClass(new Date(2026, 2, 2, 12, 0)).title).toBe('Evening');
+    // During Evening: next is Noon (Wednesday)
+    expect(manager.getNextClass(new Date(2026, 2, 2, 18, 30)).title).toBe('Noon');
+  });
+
+  it('getNextClass and getActiveClass are consistent at class boundaries', () => {
+    // Exactly at class start: active should be the class, next should be a different class
+    const atStart = new Date(2026, 2, 2, 9, 0);
+    const active = manager.getActiveClass(atStart);
+    const next = manager.getNextClass(atStart);
+    expect(active.title).toBe('Morning');
+    expect(next.title).not.toBe('Morning');
+  });
+});

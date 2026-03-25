@@ -9,7 +9,7 @@
   },
   "audio": {
     "countdownBeepFrequency": 800,
-    "countdownBeepDuration": 0.1,
+    "countdownBeepDuration": 0.3,
     "prepBeepBaseFrequency": 500,
     "prepBeepFrequencyStep": 100,
     "prepBeepDuration": 0.15,
