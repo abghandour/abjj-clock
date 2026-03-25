@@ -2934,23 +2934,10 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
 
     if (isDebug) {
       const title = prompt('Class title:', 'Adult Basics') || 'Adult Basics';
-      const minBefore = parseInt(prompt('Minutes before class end:', '15'), 10) || 15;
+      const minInput = parseInt(prompt('Minutes before class end (negative = minutes before class starts):', '15'), 10) || 15;
 
-      // Build a fake schedule entry that ends minBefore minutes from now
       const now = new Date();
-      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       const dayOfWeek = VALID_DAYS[now.getDay() === 0 ? 6 : now.getDay() - 1];
-      const endMin = now.getHours() * 60 + now.getMinutes() + minBefore;
-      const endH = Math.floor(endMin / 60) % 24;
-      const endM = endMin % 60;
-      const endTime = String(endH).padStart(2, '0') + ':' + String(endM).padStart(2, '0');
-
-      // Class started 60 minutes before end (or at least started before now)
-      const classDurationMin = Math.max(minBefore + 15, 60);
-      const startMin = endMin - classDurationMin;
-      const startH = Math.floor(((startMin % 1440) + 1440) % 1440 / 60);
-      const startM = ((startMin % 60) + 60) % 60;
-      const startTime = String(startH).padStart(2, '0') + ':' + String(startM).padStart(2, '0');
 
       // Map title to a classType (best guess)
       const titleLower = title.toLowerCase();
@@ -2964,8 +2951,38 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       else if (titleLower.includes('marathon')) classType = 'marathon_roll';
       else if (titleLower.includes('open')) classType = 'open_mat';
 
-      debugScheduleEntry = { dayOfWeek, startTime, endTime, title, classType };
-      console.log('[DEBUG] Injected schedule entry:', debugScheduleEntry);
+      if (minInput < 0) {
+        // Negative: class starts in |minInput| minutes from now
+        const minUntilStart = Math.abs(minInput);
+        const nowMin = now.getHours() * 60 + now.getMinutes();
+        const startMin = nowMin + minUntilStart;
+        const startH = Math.floor(startMin / 60) % 24;
+        const startM = startMin % 60;
+        const startTime = String(startH).padStart(2, '0') + ':' + String(startM).padStart(2, '0');
+        const endMin = startMin + 60; // 60 minute class
+        const endH = Math.floor(endMin / 60) % 24;
+        const endM = endMin % 60;
+        const endTime = String(endH).padStart(2, '0') + ':' + String(endM).padStart(2, '0');
+
+        debugScheduleEntry = { dayOfWeek, startTime, endTime, title, classType };
+        console.log('[DEBUG] Injected future schedule entry (starts in ' + minUntilStart + 'm):', debugScheduleEntry);
+      } else {
+        // Positive: class ends in minInput minutes from now (already in class)
+        const minBefore = minInput;
+        const endMin = now.getHours() * 60 + now.getMinutes() + minBefore;
+        const endH = Math.floor(endMin / 60) % 24;
+        const endM = endMin % 60;
+        const endTime = String(endH).padStart(2, '0') + ':' + String(endM).padStart(2, '0');
+
+        const classDurationMin = Math.max(minBefore + 15, 60);
+        const startMin = endMin - classDurationMin;
+        const startH = Math.floor(((startMin % 1440) + 1440) % 1440 / 60);
+        const startM = ((startMin % 60) + 60) % 60;
+        const startTime = String(startH).padStart(2, '0') + ':' + String(startM).padStart(2, '0');
+
+        debugScheduleEntry = { dayOfWeek, startTime, endTime, title, classType };
+        console.log('[DEBUG] Injected active schedule entry (ends in ' + minBefore + 'm):', debugScheduleEntry);
+      }
     }
 
     // 1. Load persisted config
