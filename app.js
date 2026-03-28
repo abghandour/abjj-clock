@@ -113,7 +113,7 @@ const APP_SETTINGS = {
     fanfareNotes: [523, 659, 784],
     fanfareNoteDuration: 0.3,
     fanfareNoteGap: 0.12,
-    volume: 0.5
+    volume: 1.0
   },
   competitionPresets: {
     'Kids (under 15)': { roundDurationSec: 240, restDurationSec: 60, numRounds: 0 },
@@ -614,6 +614,69 @@ class AudioManager {
       // Silently disable on failure
     }
   }
+
+  /**
+   * Play a short muffled thud sound for pause/resume transitions.
+   */
+  playMuffle() {
+    try {
+      if (!this._ensureContext()) return;
+      const ctx = this.audioCtx;
+      const now = ctx.currentTime;
+      const vol = APP_SETTINGS.audio.volume;
+
+      const osc = ctx.createOscillator();
+      const filter = ctx.createBiquadFilter();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.value = 150;
+
+      filter.type = 'lowpass';
+      filter.frequency.value = 300;
+      filter.Q.value = 1;
+
+      gain.gain.setValueAtTime(vol * 1.5, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.15);
+    } catch (e) {
+      // Silently disable on failure
+    }
+  }
+
+  /**
+   * Play a short descending tone for stop/reset actions.
+   */
+  playCancel() {
+    try {
+      if (!this._ensureContext()) return;
+      const ctx = this.audioCtx;
+      const now = ctx.currentTime;
+      const vol = APP_SETTINGS.audio.volume;
+
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(400, now);
+      osc.frequency.exponentialRampToValueAtTime(150, now + 0.2);
+
+      gain.gain.setValueAtTime(vol * 1.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.25);
+    } catch (e) {
+      // Silently disable on failure
+    }
+  }
 }
 
 // --- Renderer ---
@@ -862,6 +925,14 @@ class Renderer {
   updateStartStopLabel(running) {
     const enterLabel = document.getElementById('start-stop-label');
     if (enterLabel) enterLabel.textContent = running ? 'Pause' : 'Start';
+    const helpMenu = document.getElementById('help-menu');
+    if (helpMenu) {
+      if (running) {
+        helpMenu.classList.add('timer-running');
+      } else {
+        helpMenu.classList.remove('timer-running');
+      }
+    }
   }
 
   /**
@@ -2212,9 +2283,15 @@ class InputHandler {
     this.state = state;
 
     this._onKeyDown = this._onKeyDown.bind(this);
+    this._onKeyUp = this._onKeyUp.bind(this);
     this._resetCallback = null; // Set externally for key 9 reset
     this._pausedAt = 0; // Timestamp when paused via key 0
+    this._enterDownTime = 0; // Timestamp when Enter was pressed
+    this._enterLongPressTimer = null; // Timer for long-press detection
+    this._enterHandledAsLong = false; // Whether current Enter press was handled as long-press
+    this._enterDownHandled = false; // Whether Enter keydown was handled by main handler
     document.addEventListener('keydown', this._onKeyDown);
+    document.addEventListener('keyup', this._onKeyUp);
   }
 
   /**
@@ -2278,62 +2355,22 @@ class InputHandler {
     event.preventDefault();
     switch (key) {
       case 'Enter':
-        // Start (when idle) or Pause/Resume (when running)
-        if (this.state.phase === PHASES.IDLE) {
-          this.engine.start();
-        } else {
-          if (this.state.paused) {
-            this.engine.resume();
-            this.renderer.hidePauseOverlay();
-          } else {
-            this.engine.pause();
-            this.renderer.showPauseOverlay();
-          }
-        }
+        // Long-press detection: defer action until keyup or 800ms timeout
+        if (event.repeat) break; // Ignore key repeat events
+        this._enterDownTime = Date.now();
+        this._enterHandledAsLong = false;
+        this._enterDownHandled = true;
+        this._enterLongPressTimer = setTimeout(() => {
+          this._enterHandledAsLong = true;
+          this._handleEnterLongPress();
+        }, 800);
         break;
       case '0':
-        // Stop — only when timer is running or paused
-        if (this.state.phase !== PHASES.IDLE) {
-          if (this.state.paused) {
-            this.renderer.hidePauseOverlay();
-          }
-          this.engine.stop();
-          const rd = this.state.roundDurations;
-          this.renderer.updateRoundDisplay(rd ? rd[0] : this.state.config.roundDurationSec, false);
-          this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
-          this.renderer.updateRoundCounter(0, rd ? rd.length : this.state.config.numRounds);
-          this.renderer.hidePrepCountdown();
-          this.renderer.hideRoundsOver();
-          // Re-show round list preview if a preset is still active
-          if (rd) {
-            this.renderer.updateRoundList(rd, 0, this.state._presetName, this.state.restDurations, this.state.config.restDurationSec, this.renderer.getRemainingClassSec());
-          } else {
-            this.renderer.hideRoundList();
-          }
-          if (this.state._quickTimerRestore) {
-            const r = this.state._quickTimerRestore;
-            this.state.config.roundDurationSec = r.roundDurationSec;
-            this.state.config.restDurationSec = r.restDurationSec;
-            this.state.config.numRounds = r.numRounds;
-            this.state.config.prepDurationSec = r.prepDurationSec;
-            this.state.remainingSec = r.roundDurationSec;
-            this.state.roundDurations = r.roundDurations;
-            this.state.restDurations = r.restDurations;
-            this.state._presetName = r.presetName || null;
-            this.state._quickTimerRestore = null;
-            this.renderer.clearQuickTimerMode();
-            this.renderer.updatePresetLabel(this.state._presetName);
-            this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
-            this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
-            this.renderer.updateRoundCounter(0, this.state.config.numRounds);
-            if (this.state.roundDurations) {
-              this.renderer.updateRoundList(this.state.roundDurations, 0, this.state._presetName, this.state.restDurations, this.state.config.restDurationSec, this.renderer.getRemainingClassSec());
-            }
-          }
-        }
+        // Disabled — stop/cancel is now handled via long-press Enter
         break;
       case '1':
-        // Open round customization overlay
+        // Open round customization overlay (only when idle)
+        if (this.state.phase !== PHASES.IDLE) break;
         this.overlayManager.showTimeEntry('ROUND', (totalSeconds) => {
           this.state.config.roundDurationSec = totalSeconds;
           this._cancelPreset();
@@ -2345,7 +2382,8 @@ class InputHandler {
         }, this.state.config.roundDurationSec);
         break;
       case '2':
-        // Open rest customization overlay
+        // Open rest customization overlay (only when idle)
+        if (this.state.phase !== PHASES.IDLE) break;
         this.overlayManager.showTimeEntry('REST', (totalSeconds) => {
           this.state.config.restDurationSec = totalSeconds;
           this._cancelPreset();
@@ -2356,7 +2394,8 @@ class InputHandler {
         }, this.state.config.restDurationSec);
         break;
       case '3':
-        // Set number of rounds
+        // Set number of rounds (only when idle)
+        if (this.state.phase !== PHASES.IDLE) break;
         this.overlayManager.showRoundsEntry(this.state.config.numRounds, (value) => {
           this.state.config.numRounds = value;
           this._cancelPreset();
@@ -2368,7 +2407,8 @@ class InputHandler {
         });
         break;
       case '7':
-        // Quick timer — one-shot countdown, then restore previous config
+        // Quick timer (only when idle)
+        if (this.state.phase !== PHASES.IDLE) break;
         if (this.state.phase === PHASES.IDLE) {
           this.overlayManager.showTimeEntry('QUICK TIMER', (totalSeconds) => {
             // Save current config so we can restore after quick timer ends
@@ -2409,39 +2449,11 @@ class InputHandler {
         }
         break;
       case 'Clear':
-        // Cancel any timer and reset all defaults (for the current class if any)
-        if (this.state.phase !== PHASES.IDLE) {
-          if (this.state.paused) {
-            this.renderer.hidePauseOverlay();
-          }
-          this.engine.stop();
-        }
-        this.state.roundDurations = null;
-        this.state.restDurations = null;
-        this.state._presetName = null;
-        this.state._quickTimerRestore = null;
-        this.state.paused = false;
-        if (this._resetCallback) {
-          this._resetCallback();
-        } else {
-          this.state.config.roundDurationSec = DEFAULT_CONFIG.roundDurationSec;
-          this.state.config.restDurationSec = DEFAULT_CONFIG.restDurationSec;
-          this.state.config.numRounds = DEFAULT_CONFIG.numRounds;
-          this.state.remainingSec = DEFAULT_CONFIG.roundDurationSec;
-          StorageManager.save(this.state.config);
-        }
-        this.renderer.clearQuickTimerMode();
-        this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
-        this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
-        this.renderer.updateRoundCounter(0, this.state.config.numRounds);
-        this.renderer.updatePresetLabel(this.state._presetName);
-        this.renderer.hidePrepCountdown();
-        this.renderer.hideRoundList();
-        this.renderer.hidePauseOverlay();
-        this.renderer.hideRoundsOver();
+        // Disabled — reset is now handled via long-press Enter when idle
         break;
       case '/':
-        // Toggle competition presets menu
+        // Toggle competition presets menu (only when idle)
+        if (this.state.phase !== PHASES.IDLE) break;
         if (this.overlayManager.isOpen()) {
           this.overlayManager.closeOverlay();
         } else {
@@ -2451,7 +2463,8 @@ class InputHandler {
         }
         break;
       case '*':
-        // Toggle training presets menu
+        // Toggle training presets menu (only when idle)
+        if (this.state.phase !== PHASES.IDLE) break;
         if (this.overlayManager.isOpen()) {
           this.overlayManager.closeOverlay();
         } else {
@@ -2514,8 +2527,93 @@ class InputHandler {
   /**
    * Remove the keydown listener (for cleanup/testing).
    */
+  /**
+   * Handle keyup events for Enter long-press detection.
+   * @param {KeyboardEvent} event
+   */
+  _onKeyUp(event) {
+    const key = event.key;
+    if (key !== 'Enter') return;
+    if (this._enterLongPressTimer) {
+      clearTimeout(this._enterLongPressTimer);
+      this._enterLongPressTimer = null;
+    }
+    // Ignore if the keydown was consumed by an overlay
+    if (!this._enterDownHandled) return;
+    this._enterDownHandled = false;
+    if (!this._enterHandledAsLong) {
+      this._handleEnterShortPress();
+    }
+    this._enterHandledAsLong = false;
+  }
+
+  /**
+   * Short press Enter: start / pause / resume.
+   */
+  _handleEnterShortPress() {
+    if (this.overlayManager.isOpen()) return;
+    if (this.state.phase === PHASES.IDLE) {
+      this.engine.start();
+    } else if (this.state.paused) {
+      this.engine.resume();
+      this.renderer.hidePauseOverlay();
+      this.audioManager.playMuffle();
+    } else {
+      this.engine.pause();
+      this.renderer.showPauseOverlay();
+      this.audioManager.playMuffle();
+    }
+  }
+
+  /**
+   * Long press Enter: reset (when idle) or cancel/stop (when running/paused).
+   */
+  _handleEnterLongPress() {
+    if (this.overlayManager.isOpen()) return;
+    if (this.state.phase === PHASES.IDLE) {
+      // Same as Clear/Reset
+      this.state.roundDurations = null;
+      this.state.restDurations = null;
+      this.state._presetName = null;
+      this.state._quickTimerRestore = null;
+      this.state.paused = false;
+      if (this._resetCallback) {
+        this._resetCallback();
+      } else {
+        this.state.config.roundDurationSec = DEFAULT_CONFIG.roundDurationSec;
+        this.state.config.restDurationSec = DEFAULT_CONFIG.restDurationSec;
+        this.state.config.numRounds = DEFAULT_CONFIG.numRounds;
+        this.state.remainingSec = DEFAULT_CONFIG.roundDurationSec;
+        StorageManager.save(this.state.config);
+      }
+      this.renderer.clearQuickTimerMode();
+      this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
+      this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
+      this.renderer.updateRoundCounter(0, this.state.config.numRounds);
+      this.renderer.updatePresetLabel(this.state._presetName);
+      this.renderer.hidePrepCountdown();
+      this.renderer.hideRoundList();
+      this.renderer.hidePauseOverlay();
+      this.renderer.hideRoundsOver();
+      this.audioManager.playCancel();
+    } else {
+      // Same as Stop (key 0)
+      if (this.state.paused) {
+        this.renderer.hidePauseOverlay();
+      }
+      this.state._cancelledByUser = true;
+      this.engine.stop();
+      this.audioManager.playCancel();
+      const rd = this.state.roundDurations;
+      this.renderer.updateRoundDisplay(rd ? rd[0] : this.state.config.roundDurationSec, false);
+      this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
+      this.renderer.updateRoundCounter(0, rd ? rd.length : this.state.config.numRounds);
+    }
+  }
+
   destroy() {
     document.removeEventListener('keydown', this._onKeyDown);
+    document.removeEventListener('keyup', this._onKeyUp);
   }
 }
 
@@ -3042,7 +3140,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
           renderer.hideRoundsOver();
         }
         // "Rounds Over" announcement when last round ends naturally (ROUND → IDLE via stop())
-        if (newPhase === PHASES.IDLE && oldPhase === PHASES.ROUND) {
+        if (newPhase === PHASES.IDLE && oldPhase === PHASES.ROUND && !s._cancelledByUser) {
           const msg = s._quickTimerRestore ? "Time's Up" : 'Rounds Over';
           renderer.showRoundsOver(msg);
           const rd = s.roundDurations;
@@ -3050,6 +3148,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
           renderer.updateRestDisplay(s.config.restDurationSec, false);
           renderer.updateRoundCounter(0, rd ? rd.length : s.config.numRounds);
         }
+        s._cancelledByUser = false;
         // Restore config after quick timer ends
         if (newPhase === PHASES.IDLE && s._quickTimerRestore) {
           const r = s._quickTimerRestore;

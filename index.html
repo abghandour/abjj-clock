@@ -13,16 +13,16 @@
       src: url('fonts/DSEG7Classic-Bold.woff2') format('woff2');
     }
     :root {
-      --bg-primary: #1a1a2e;
-      --bg-secondary: #16213e;
+      --bg-primary: #000000;
+      --bg-secondary: #000000;
       --bg-overlay: rgba(0, 0, 0, 0.85);
       --text-primary: #ffffff;
       --text-round: #00cc44;
       --text-rest: #ff4444;
-      --text-clock: #8888aa;
-      --text-muted: #666680;
-      --text-label: #aaaacc;
-      --text-help: #555570;
+      --text-clock: #aaaacc;
+      --text-muted: #9999bb;
+      --text-label: #ccccee;
+      --text-help: #8888aa;
       --accent-green: #00cc44;
       --accent-red: #ff4444;
       --accent-yellow: #ffcc00;
@@ -112,6 +112,9 @@
     /* Round timer */
     #round-section {
       text-align: center;
+      border: 2px solid rgba(255,255,255,0.12);
+      border-radius: 0.5rem;
+      padding: 1.5vh 1vw;
     }
 
     #round-label {
@@ -135,6 +138,9 @@
     #rest-section {
       text-align: center;
       margin-top: 1vh;
+      border: 2px solid rgba(255,255,255,0.12);
+      border-radius: 0.5rem;
+      padding: 1.5vh 1vw;
     }
 
     #rest-label {
@@ -156,15 +162,11 @@
 
     /* Active timer border */
     #round-section.active {
-      border: 2px solid var(--text-round);
-      border-radius: 0.5rem;
-      padding: 1.5vh 1vw;
+      border-color: var(--text-round);
     }
 
     #rest-section.active {
-      border: 2px solid var(--text-rest);
-      border-radius: 0.5rem;
-      padding: 1.5vh 1vw;
+      border-color: var(--text-rest);
     }
 
     /* Round counter */
@@ -267,6 +269,10 @@
 
     #help-menu .help-arrow {
       color: var(--text-help);
+    }
+
+    #help-menu.timer-running .idle-only {
+      opacity: 0.2;
     }
 
     /* Customization overlay */
@@ -666,20 +672,17 @@
   <!-- Help menu - bottom right -->
   <div id="help-menu">
     <span class="help-key">Enter</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span id="start-stop-label">Start</span>
-    <span class="help-key">0</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span>Cancel</span>
     <div style="grid-column: 1 / -1; height: 1px; background: rgba(255,255,255,0.15); margin: 0.2em 0; width: 100%; min-width: 100%;"></div>
-    <span class="help-key">1</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span>Set Round Time</span>
-    <span class="help-key">2</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span>Set Rest Time</span>
-    <span class="help-key">3</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span>Set Rounds</span>
+    <span class="help-key idle-only">1</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Set Round Duration</span>
+    <span class="help-key idle-only">2</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only" style="padding-left:35px">Rest Duration</span>
+    <span class="help-key idle-only">3</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only" style="padding-left:35px">Rounds</span>
     <div style="grid-column: 1 / -1; height: 1px; background: rgba(255,255,255,0.15); margin: 0.2em 0; width: 100%; min-width: 100%;"></div>
-    <span class="help-key">7</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span>Quick Timer</span>
+    <span class="help-key idle-only">7</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Quick Timer</span>
     <span class="help-key">8</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span id="stealth-label">Stealth</span>
     <span class="help-key">9</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span>Class Schedule</span>
     <div style="grid-column: 1 / -1; height: 1px; background: rgba(255,255,255,0.15); margin: 0.2em 0; width: 100%; min-width: 100%;"></div>
-    <span class="help-key">/</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span>Competition Presets</span>
-    <span class="help-key">*</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span>Training Presets</span>
-    <div style="grid-column: 1 / -1; height: 1px; background: rgba(255,255,255,0.15); margin: 0.2em 0; width: 100%; min-width: 100%;"></div>
-    <span class="help-key">Clear</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span>Reset</span>
+    <span class="help-key idle-only">/</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Competition Presets</span>
+    <span class="help-key idle-only">*</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Training Presets</span>
   </div>
 
   <!-- Customization / Advanced overlay -->
@@ -696,7 +699,7 @@
     </div>
     <div class="pause-help">
       <span class="pause-help-key">Enter</span> Resume
-      <span style="margin-left:1.5em;" class="pause-help-key">0</span> Cancel
+      <span style="margin-left:1.5em;">Hold Enter for Cancel</span>
     </div>
   </div>
 
