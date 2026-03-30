@@ -1330,14 +1330,17 @@ class ClassProgressRenderer {
 class OverlayManager {
   constructor() {
     this.overlayEl = document.getElementById('overlay');
+    this.inlineEditBarEl = document.getElementById('inline-edit-bar');
     this._open = false;
-    this._mode = null; // 'time-entry' | 'competition' | 'training' | 'training-rounds' | 'training-rest' | 'chainsaw-odd-round' | 'chainsaw-odd-rest' | 'chainsaw-even-round' | 'chainsaw-even-rest'
+    this._mode = null; // 'time-entry' | 'inline-time' | 'competition' | 'training' | etc.
     this._inputBuffer = '';
     this._timeEntryStep = null; // 'minutes' | 'seconds'
     this._timeEntryLabel = '';
     this._timeEntryMinutes = 0;
     this._timeEntryCallback = null;
     this._advancedCallback = null;
+    this._inlineTargetEl = null; // The timer element being edited inline
+    this._inlineOriginalValue = ''; // Original value to restore on cancel
     this._advancedConfig = null;
     this._trainingMode = null; // 'pyramid' | 'ladder_up' | 'ladder_down'
     this._trainingRounds = 0;
@@ -1371,9 +1374,17 @@ class OverlayManager {
     this._advancedConfig = null;
     this._trainingMode = null;
     this._trainingRounds = 0;
+    if (this._inlineTargetEl) {
+      this._inlineTargetEl.classList.remove('editing');
+      this._inlineTargetEl = null;
+    }
     if (this.overlayEl) {
       this.overlayEl.classList.remove('active');
       this.overlayEl.innerHTML = '';
+    }
+    if (this.inlineEditBarEl) {
+      this.inlineEditBarEl.classList.remove('active');
+      this.inlineEditBarEl.innerHTML = '';
     }
   }
 
@@ -1391,6 +1402,127 @@ class OverlayManager {
     this._timeEntryCurrentSec = currentSec || 0;
     this._inputBuffer = '';
     this._renderTimeEntry('');
+  }
+
+  /**
+   * Inline time entry — edits the timer value in-place with a top instruction bar.
+   * @param {string} label - 'ROUND' or 'REST'
+   * @param {function} callback - Called with (totalSeconds) when confirmed
+   * @param {number} currentSec - Current value in seconds
+   * @param {HTMLElement} targetEl - The timer element to edit inline
+   */
+  showInlineTimeEntry(label, callback, currentSec, targetEl) {
+    this._open = true;
+    this._mode = 'inline-time';
+    this._timeEntryLabel = label;
+    this._timeEntryCallback = callback;
+    this._timeEntryCurrentSec = currentSec || 0;
+    this._inputBuffer = '';
+    this._inlineTargetEl = targetEl;
+    this._inlineOriginalValue = targetEl ? targetEl.textContent : '';
+    if (targetEl) targetEl.classList.add('editing');
+    this._renderInlineTimeEntry('');
+  }
+
+  /**
+   * Render the inline time entry instruction bar.
+   */
+  _renderInlineTimeEntry(errorMsg) {
+    if (!this.inlineEditBarEl) return;
+    const raw = this._inputBuffer;
+    let preview = '';
+    if (raw.length > 0 && isNumeric(raw)) {
+      if (raw.charAt(0) === '0') {
+        const sec = parseInt(raw.substring(1) || '0', 10);
+        preview = formatTime(sec);
+      } else {
+        const val = parseInt(raw, 10);
+        if (val < 60) {
+          preview = formatTime(val * 60);
+        } else {
+          const s = val % 100;
+          const m = Math.floor(val / 100);
+          preview = s <= 59 ? formatTime(m * 60 + s) : '';
+        }
+      }
+    }
+    if (!preview) {
+      preview = formatTime(this._timeEntryCurrentSec || 0);
+    }
+    // Update the timer element directly
+    if (this._inlineTargetEl) {
+      this._inlineTargetEl.textContent = preview;
+    }
+    // Show instruction bar
+    const errorHtml = errorMsg ? `<div class="edit-error">${errorMsg}</div>` : '';
+    this.inlineEditBarEl.innerHTML =
+      `<div>Editing ${this._timeEntryLabel} duration: <strong>${this._inputBuffer || '_'}</strong></div>` +
+      `<div class="edit-hint"><div style="padding:12px">"1" → 1:00 &nbsp;&nbsp; "12" → 12:00 &nbsp;&nbsp; "123" → 1:23 &nbsp;&nbsp; "1234" → 12:34 &nbsp;&nbsp; "030" → 0:30</div> <span class="key-badge">Enter</span> confirm &nbsp; <span class="key-badge">*</span> cancel</div>` +
+      errorHtml;
+    this.inlineEditBarEl.classList.add('active');
+  }
+
+  /**
+   * Handle key input for inline time entry.
+   */
+  _handleInlineTimeKey(key) {
+    if (key === 'Enter') {
+      this._confirmInlineTimeEntry();
+    } else if (key === '*' || key === 'Backspace') {
+      if (key === 'Backspace' && this._inputBuffer.length > 0) {
+        this._inputBuffer = this._inputBuffer.slice(0, -1);
+        this._renderInlineTimeEntry('');
+      } else if (key === '*') {
+        // Cancel — restore original value
+        if (this._inlineTargetEl) {
+          this._inlineTargetEl.textContent = this._inlineOriginalValue;
+          this._inlineTargetEl.classList.remove('editing');
+        }
+        this.closeOverlay();
+      }
+    } else if (isNumeric(key) && this._inputBuffer.length < 4) {
+      this._inputBuffer += key;
+      this._renderInlineTimeEntry('');
+    }
+  }
+
+  /**
+   * Confirm inline time entry.
+   */
+  _confirmInlineTimeEntry() {
+    const raw = this._inputBuffer;
+    if (!raw || !isNumeric(raw)) {
+      this._renderInlineTimeEntry('Enter a valid number');
+      return;
+    }
+    let totalSeconds;
+    if (raw.charAt(0) === '0') {
+      totalSeconds = parseInt(raw.substring(1) || '0', 10);
+    } else {
+      const val = parseInt(raw, 10);
+      if (val < 60) {
+        totalSeconds = val * 60;
+      } else {
+        const s = val % 100;
+        const m = Math.floor(val / 100);
+        if (s > 59) {
+          this._renderInlineTimeEntry('Invalid seconds (max 59)');
+          return;
+        }
+        totalSeconds = m * 60 + s;
+      }
+    }
+    if (totalSeconds < 1) {
+      this._renderInlineTimeEntry('Duration must be at least 1 second');
+      return;
+    }
+    if (this._inlineTargetEl) {
+      this._inlineTargetEl.classList.remove('editing');
+    }
+    if (this._timeEntryCallback) {
+      this._timeEntryCallback(totalSeconds);
+    }
+    this.closeOverlay();
   }
 
   /**
@@ -1465,13 +1597,15 @@ class OverlayManager {
       return;
     }
 
-    // * or / closes any overlay
-    if (key === '*' || key === '/') {
+    // * or / closes any overlay (except inline-time which handles * specially)
+    if ((key === '*' || key === '/') && this._mode !== 'inline-time') {
       this.closeOverlay();
       return;
     }
 
-    if (this._mode === 'time-entry') {
+    if (this._mode === 'inline-time') {
+      this._handleInlineTimeKey(key);
+    } else if (this._mode === 'time-entry') {
       this._handleTimeEntryKey(key);
     } else if (this._mode === 'rounds-entry') {
       this._handleRoundsEntryKey(key);
@@ -2348,9 +2482,9 @@ class InputHandler {
         // Disabled — stop/cancel is now handled via long-press Enter
         break;
       case '1':
-        // Open round customization overlay (only when idle)
+        // Inline round duration edit (only when idle)
         if (this.state.phase !== PHASES.IDLE) break;
-        this.overlayManager.showTimeEntry('ROUND', (totalSeconds) => {
+        this.overlayManager.showInlineTimeEntry('ROUND', (totalSeconds) => {
           this.state.config.roundDurationSec = totalSeconds;
           this._cancelPreset();
           StorageManager.save(this.state.config);
@@ -2358,19 +2492,19 @@ class InputHandler {
             this.state.remainingSec = totalSeconds;
             this.renderer.updateRoundDisplay(totalSeconds, false);
           }
-        }, this.state.config.roundDurationSec);
+        }, this.state.config.roundDurationSec, this.renderer.roundTimerEl);
         break;
       case '2':
-        // Open rest customization overlay (only when idle)
+        // Inline rest duration edit (only when idle)
         if (this.state.phase !== PHASES.IDLE) break;
-        this.overlayManager.showTimeEntry('REST', (totalSeconds) => {
+        this.overlayManager.showInlineTimeEntry('REST', (totalSeconds) => {
           this.state.config.restDurationSec = totalSeconds;
           this._cancelPreset();
           StorageManager.save(this.state.config);
           if (this.state.phase === PHASES.IDLE) {
             this.renderer.updateRestDisplay(totalSeconds, false);
           }
-        }, this.state.config.restDurationSec);
+        }, this.state.config.restDurationSec, this.renderer.restTimerEl);
         break;
       case '3':
         // Set number of rounds (only when idle)

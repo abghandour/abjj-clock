@@ -134,6 +134,87 @@
       font-variant-numeric: tabular-nums;
     }
 
+    #round-timer.editing, #rest-timer.editing {
+      animation: blink 1s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0.2; }
+    }
+
+    /* Inline edit instruction bar */
+    #inline-edit-bar {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: rgba(0, 0, 0, 0.9);
+      color: var(--text-primary);
+      text-align: center;
+      padding: 1.5vh 2vw;
+      font-size: clamp(1rem, 2vw, 2rem);
+      z-index: 100;
+      border-bottom: 2px solid var(--accent-green);
+    }
+
+    #inline-edit-bar.active {
+      display: block;
+    }
+
+    #inline-edit-bar .edit-hint {
+      color: var(--text-muted);
+      font-size: 0.7em;
+      margin-top: 0.5vh;
+    }
+
+    #inline-edit-bar .edit-error {
+      color: var(--accent-red);
+      font-size: 0.8em;
+      margin-top: 0.3vh;
+    }
+
+    #inline-edit-bar .key-badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 0.3em;
+      padding: 0.1em 0.5em;
+      font-weight: 600;
+      margin: 0 0.2em;
+    }
+
+    /* Inline edit instruction bar */
+    #edit-instruction-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: rgba(0, 0, 0, 0.9);
+      color: var(--text-primary);
+      text-align: center;
+      padding: 2vh 2vw;
+      font-size: clamp(1rem, 2.5vw, 2.5rem);
+      z-index: 1000;
+      display: none;
+    }
+
+    #edit-instruction-bar.active {
+      display: block;
+    }
+
+    #edit-instruction-bar .edit-hint {
+      font-size: 0.6em;
+      color: var(--text-muted);
+      margin-top: 0.5em;
+    }
+
+    #edit-instruction-bar .edit-error {
+      color: var(--accent-red);
+      margin-top: 0.5em;
+    }
+
     /* Rest timer */
     #rest-section {
       text-align: center;
@@ -687,6 +768,9 @@
     <span class="help-key idle-only">/</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Competition Presets</span>
     <span class="help-key idle-only">*</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Training Presets</span>
   </div>
+
+  <!-- Inline edit instruction bar -->
+  <div id="inline-edit-bar"></div>
 
   <!-- Customization / Advanced overlay -->
   <div id="overlay"></div>
