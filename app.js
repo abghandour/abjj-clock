@@ -517,7 +517,7 @@ class AudioManager {
    */
   playRoundStartFanfare() {
     try {
-      const audio = new Audio('boxing-bell-single.mp3');
+      const audio = new Audio('boxing-bell-single-loud.mp3');
       audio.volume = APP_SETTINGS.audio.volume;
       audio.play();
     } catch (e) {
@@ -530,7 +530,7 @@ class AudioManager {
    */
   playEndOfRoundBeep() {
     try {
-      const audio = new Audio('boxing-bell.mp3');
+      const audio = new Audio('boxing-bell-loud.mp3');
       audio.volume = APP_SETTINGS.audio.volume;
       audio.play();
     } catch (e) {
@@ -586,7 +586,7 @@ class AudioManager {
    */
   playEndOfClassRing() {
     try {
-      const audio = new Audio('boxing-bell-single.mp3');
+      const audio = new Audio('boxing-bell-single-loud.mp3');
       audio.volume = APP_SETTINGS.audio.volume;
       audio.play();
     } catch (e) {
