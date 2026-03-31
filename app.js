@@ -669,6 +669,7 @@ class Renderer {
     this.clockEl = document.getElementById('clock');
     this.dayOfWeekEl = document.getElementById('day-of-week');
     this.temperatureEl = document.getElementById('temperature');
+    this.bigClockEl = document.getElementById('big-clock');
     this.roundTimerEl = document.getElementById('round-timer');
     this.restTimerEl = document.getElementById('rest-timer');
     this.roundLabelEl = document.getElementById('round-label');
@@ -703,14 +704,14 @@ class Renderer {
     }
     if (this.roundTimerEl) {
       this.roundTimerEl.style.opacity = isActive ? '1' : '0.4';
-      const color = (isActive && remainingSec <= 10) ? 'var(--accent-yellow)' : 'var(--text-round)';
-      this.roundTimerEl.style.color = color;
     }
     if (this.roundSectionEl) {
       this.roundSectionEl.classList.toggle('active', isActive);
       if (isActive && remainingSec <= 10) {
+        this.roundSectionEl.style.backgroundColor = 'var(--accent-yellow)';
         this.roundSectionEl.style.borderColor = 'var(--accent-yellow)';
       } else {
+        this.roundSectionEl.style.backgroundColor = '';
         this.roundSectionEl.style.borderColor = '';
       }
     }
@@ -752,6 +753,17 @@ class Renderer {
     }
     if (this.dayOfWeekEl) {
       this.dayOfWeekEl.textContent = now.toLocaleDateString('en-US', { weekday: 'long' });
+    }
+    // Update big clock (HH:MM:ss format with smaller seconds)
+    if (this.bigClockEl) {
+      const h = now.getHours();
+      const m = now.getMinutes();
+      const s = now.getSeconds();
+      const h12 = h % 12 || 12;
+      const hStr = String(h12).padStart(2, '0');
+      const mStr = String(m).padStart(2, '0');
+      const sStr = String(s).padStart(2, '0');
+      this.bigClockEl.innerHTML = `${hStr}:${mStr}<span class="big-clock-seconds">:${sStr}</span>`;
     }
   }
 
@@ -3210,6 +3222,9 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     const presetManager = new ClassPresetManager();
     const classProgress = new ClassProgressRenderer();
 
+    // Set initial idle state for layout
+    document.body.classList.add('timer-idle');
+
     // 4. Pending class type for deferred preset loading (Req 19.3, 19.4)
     let pendingClassType = null;
     let hadActiveClass = false; // Track for end-of-class ring
@@ -3303,8 +3318,10 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
             renderer.hideRoundList();
           }
         }
-        // Update Start/Stop label
+        // Update Start/Stop label and idle state
         renderer.updateStartStopLabel(newPhase !== PHASES.IDLE);
+        // Toggle idle class for layout animation
+        document.body.classList.toggle('timer-idle', newPhase === PHASES.IDLE && !state.paused);
       }
     );
 

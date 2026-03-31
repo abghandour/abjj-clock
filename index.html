@@ -87,6 +87,31 @@
       font-size: 0.7em;
     }
 
+    /* Big clock - visible only when timer is idle */
+    #big-clock {
+      position: fixed;
+      top: 37%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-family: 'DSEG7', sans-serif;
+      font-size: clamp(6rem, 20vw, 24rem);
+      font-weight: 700;
+      color: var(--text-clock);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.5s ease-in-out;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #big-clock .big-clock-seconds {
+      font-size: 0.5em;
+      opacity: 0.7;
+    }
+
+    body.timer-idle #big-clock {
+      opacity: 1;
+    }
+
     /* Main timer area - centered */
     #timer-area {
       display: flex;
@@ -94,6 +119,17 @@
       align-items: center;
       justify-content: center;
       gap: 2vh;
+      transition: all 0.5s ease-in-out;
+      transform-origin: center center;
+    }
+
+    /* Timer area shrunk to bottom-left when idle */
+    body.timer-idle #timer-area {
+      position: absolute;
+      bottom: 3vh;
+      left: 3vw;
+      transform: scale(0.5);
+      transform-origin: bottom left;
     }
 
     /* Preset label */
@@ -115,11 +151,12 @@
       border: 2px solid rgba(255,255,255,0.12);
       border-radius: 0.5rem;
       padding: 1.5vh 1vw;
+      background: var(--text-round);
     }
 
     #round-label {
       font-size: clamp(1.2rem, 3vw, 4rem);
-      color: var(--text-label);
+      color: #000000;
       text-transform: uppercase;
       letter-spacing: 0.3em;
       margin-bottom: 2vh;
@@ -129,7 +166,7 @@
       font-size: clamp(4rem, 18vw, 20rem);
       font-family: 'DSEG7', sans-serif;
       font-weight: 700;
-      color: var(--text-round);
+      color: #000000;
       line-height: 1;
       font-variant-numeric: tabular-nums;
     }
@@ -222,11 +259,12 @@
       border: 2px solid rgba(255,255,255,0.12);
       border-radius: 0.5rem;
       padding: 1.5vh 1vw;
+      background: var(--text-rest);
     }
 
     #rest-label {
       font-size: clamp(0.9rem, 2vw, 2.5rem);
-      color: var(--text-label);
+      color: #000000;
       text-transform: uppercase;
       letter-spacing: 0.3em;
       margin-bottom: 2vh;
@@ -236,7 +274,7 @@
       font-size: clamp(2.5rem, 10vw, 12rem);
       font-family: 'DSEG7', sans-serif;
       font-weight: 700;
-      color: var(--text-rest);
+      color: #000000;
       line-height: 1;
       font-variant-numeric: tabular-nums;
     }
@@ -333,12 +371,12 @@
       position: absolute;
       bottom: 2vh;
       right: 3vw;
-      font-size: clamp(0.6rem, 1.2vw, 1.2rem);
+      font-size: clamp(0.3rem, 0.6vw, 0.6rem);
       color: var(--text-help);
       display: grid;
       grid-template-columns: auto auto auto;
-      gap: 0 0.6em;
-      line-height: 1.8;
+      gap: 0 0.3em;
+      line-height: 1.6;
       justify-items: start;
     }
 
@@ -582,6 +620,10 @@
       line-height: 1.8;
       max-height: 40vh;
       overflow-y: auto;
+      background: var(--bg-primary);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 0.5rem;
+      padding: 0.8rem 1rem;
     }
 
     #round-list.active {
@@ -647,6 +689,10 @@
     .schedule-overlay {
       text-align: center;
       max-width: 90vw;
+      background: var(--bg-primary);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 0.5rem;
+      padding: 2rem 2.5rem;
     }
 
     .schedule-title {
@@ -707,6 +753,9 @@
 </head>
 <body>
 
+  <!-- Big clock - visible when timer is idle -->
+  <div id="big-clock"></div>
+
   <!-- Clock area - top right -->
   <div id="clock-area">
     <span id="day-of-week"></span>
@@ -758,8 +807,8 @@
     <span class="help-key">Enter</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span id="start-stop-label">Start</span>
     <div style="grid-column: 1 / -1; height: 1px; background: rgba(255,255,255,0.15); margin: 0.2em 0; width: 100%; min-width: 100%;"></div>
     <span class="help-key idle-only">1</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Set Round Duration</span>
-    <span class="help-key idle-only">2</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only" style="padding-left:35px">Rest Duration</span>
-    <span class="help-key idle-only">3</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only" style="padding-left:35px">Rounds</span>
+    <span class="help-key idle-only">2</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only" style="padding-left:17px">Rest Duration</span>
+    <span class="help-key idle-only">3</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only" style="padding-left:17px">Rounds</span>
     <div style="grid-column: 1 / -1; height: 1px; background: rgba(255,255,255,0.15); margin: 0.2em 0; width: 100%; min-width: 100%;"></div>
     <span class="help-key idle-only">7</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Quick Timer</span>
     <span class="help-key">8</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span id="stealth-label">Stealth</span>
