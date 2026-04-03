@@ -180,6 +180,34 @@
       50%, 100% { opacity: 0.2; }
     }
 
+    /* Time-setting mode: digit group base styles to prevent layout shift */
+    .ts-minutes, .ts-seconds {
+      padding: 6px;
+      margin: 4px;
+      border: 2px solid transparent;
+      border-radius: 0.15em;
+      display: inline-block;
+    }
+
+    #round-section .ts-minutes,
+    #round-section .ts-seconds {
+      border-color: var(--text-round);
+    }
+
+    #rest-section .ts-minutes,
+    #rest-section .ts-seconds {
+      border-color: var(--text-rest);
+    }
+
+    /* Time-setting mode: black border only on the active digit group, blink it */
+    #round-section .time-setting-minutes .ts-minutes,
+    #round-section .time-setting-seconds .ts-seconds,
+    #rest-section .time-setting-minutes .ts-minutes,
+    #rest-section .time-setting-seconds .ts-seconds {
+      border-color: #000000;
+      animation: blink 0.7s ease-in-out infinite;
+    }
+
     /* Inline edit instruction bar */
     #inline-edit-bar {
       display: none;
@@ -749,6 +777,19 @@
       color: var(--text-muted);
       margin-top: 2vh;
     }
+
+    /* Stealth mode hint */
+    #stealth-hint {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: clamp(1.2rem, 2.5vw, 2.5rem);
+      color: var(--text-muted);
+      text-align: center;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
@@ -771,13 +812,13 @@
     <!-- Round timer -->
     <div id="round-section">
       <div id="round-label">Round</div>
-      <div id="round-timer">05:00</div>
+      <div id="round-timer"><span class="ts-minutes">05</span>:<span class="ts-seconds">00</span></div>
     </div>
 
     <!-- Rest timer -->
     <div id="rest-section">
       <div id="rest-label">Rest</div>
-      <div id="rest-timer">01:00</div>
+      <div id="rest-timer"><span class="ts-minutes">01</span>:<span class="ts-seconds">00</span></div>
     </div>
 
     <!-- Round counter -->
@@ -806,16 +847,13 @@
   <div id="help-menu">
     <span class="help-key">Enter</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span id="start-stop-label">Start</span>
     <div style="grid-column: 1 / -1; height: 1px; background: rgba(255,255,255,0.15); margin: 0.2em 0; width: 100%; min-width: 100%;"></div>
-    <span class="help-key idle-only">1</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Set Round Duration</span>
-    <span class="help-key idle-only">2</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only" style="padding-left:17px">Rest Duration</span>
-    <span class="help-key idle-only">3</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only" style="padding-left:17px">Rounds</span>
-    <div style="grid-column: 1 / -1; height: 1px; background: rgba(255,255,255,0.15); margin: 0.2em 0; width: 100%; min-width: 100%;"></div>
-    <span class="help-key idle-only">7</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Quick Timer</span>
-    <span class="help-key">8</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span id="stealth-label">Stealth</span>
-    <span class="help-key">9</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span>Class Schedule</span>
+    <span class="help-key idle-only">▲▼◀▶</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Edit Times</span>
+    <span class="help-key idle-only">+ / −</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Adjust Value</span>
     <div style="grid-column: 1 / -1; height: 1px; background: rgba(255,255,255,0.15); margin: 0.2em 0; width: 100%; min-width: 100%;"></div>
     <span class="help-key idle-only">/</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Competition Presets</span>
     <span class="help-key idle-only">*</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Training Presets</span>
+    <div style="grid-column: 1 / -1; height: 1px; background: rgba(255,255,255,0.15); margin: 0.2em 0; width: 100%; min-width: 100%;"></div>
+    <span class="help-key">.</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span id="stealth-label">Stealth</span>
   </div>
 
   <!-- Inline edit instruction bar -->
@@ -849,6 +887,9 @@
     <div id="round-list"></div>
     <div id="next-class-display"></div>
   </div>
+
+  <!-- Stealth mode hint -->
+  <div id="stealth-hint">Press any key to display timers</div>
 
   <script src="app.js"></script>
 </body>

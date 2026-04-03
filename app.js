@@ -405,12 +405,26 @@ class TimerEngine {
           // Last round in limited mode — skip rest, go straight to IDLE
           this.stop();
         } else {
-          // ROUND → REST
-          this.state.phase = PHASES.REST;
-          const restIdx = this.state.currentRound - 1; // 0-based index for current round's rest
+          // Check if rest duration is 0 — skip rest, go directly to next round
+          const restIdx = this.state.currentRound - 1;
           const rd = this.state.restDurations;
-          this.state.remainingSec = rd ? Math.max(rd[restIdx % rd.length], 1) : Math.max(this.state.config.restDurationSec, 1);
-          this.onPhaseChange(this.state, oldPhase, this.state.phase);
+          const restSec = rd ? rd[restIdx % rd.length] : this.state.config.restDurationSec;
+
+          if (restSec <= 0) {
+            // Skip REST, go straight to next ROUND (no beep)
+            alert.type = 'none';
+            this.state.phase = PHASES.ROUND;
+            const roundDurations = this.state.roundDurations;
+            const nextRoundIdx = this.state.currentRound;
+            this.state.remainingSec = roundDurations ? Math.max(roundDurations[nextRoundIdx % roundDurations.length], 1) : Math.max(this.state.config.roundDurationSec, 1);
+            this.state.currentRound++;
+            this.onPhaseChange(this.state, oldPhase, this.state.phase);
+          } else {
+            // ROUND → REST
+            this.state.phase = PHASES.REST;
+            this.state.remainingSec = Math.max(restSec, 1);
+            this.onPhaseChange(this.state, oldPhase, this.state.phase);
+          }
         }
 
       } else if (oldPhase === PHASES.REST) {
@@ -697,7 +711,10 @@ class Renderer {
    */
   updateRoundDisplay(remainingSec, isActive) {
     if (this.roundTimerEl) {
-      this.roundTimerEl.textContent = formatTime(remainingSec);
+      const mins = String(Math.floor(remainingSec / 60)).padStart(2, '0');
+      const secs = String(remainingSec % 60).padStart(2, '0');
+      this.roundTimerEl.innerHTML =
+        `<span class="ts-minutes">${mins}</span>:<span class="ts-seconds">${secs}</span>`;
     }
     if (this.roundLabelEl) {
       this.roundLabelEl.style.opacity = isActive ? '1' : '0.5';
@@ -724,7 +741,10 @@ class Renderer {
    */
   updateRestDisplay(remainingSec, isActive) {
     if (this.restTimerEl) {
-      this.restTimerEl.textContent = formatTime(remainingSec);
+      const mins = String(Math.floor(remainingSec / 60)).padStart(2, '0');
+      const secs = String(remainingSec % 60).padStart(2, '0');
+      this.restTimerEl.innerHTML =
+        `<span class="ts-minutes">${mins}</span>:<span class="ts-seconds">${secs}</span>`;
     }
     if (this.restLabelEl) {
       this.restLabelEl.style.opacity = isActive ? '1' : '0.5';
@@ -890,9 +910,11 @@ class Renderer {
   applyStealth(phase) {
     const hidden = this.stealth ? 'hidden' : '';
     if (this.clockAreaEl) this.clockAreaEl.style.visibility = hidden;
+    if (this.bigClockEl) this.bigClockEl.style.visibility = hidden;
     if (this.roundSectionEl) this.roundSectionEl.style.visibility = hidden;
     if (this.roundCounterEl) this.roundCounterEl.style.visibility = hidden;
     if (this.prepCountdownEl) this.prepCountdownEl.style.visibility = hidden;
+    if (this.presetLabelEl) this.presetLabelEl.style.visibility = hidden;
     // Hide class time and class progress
     const classTimeEl = this.scheduleDisplayEl ? this.scheduleDisplayEl.querySelector('.class-time') : null;
     if (classTimeEl) classTimeEl.style.visibility = hidden;
@@ -902,6 +924,9 @@ class Renderer {
     if (this.restSectionEl) {
       this.restSectionEl.style.visibility = (this.stealth && phase !== PHASES.REST) ? 'hidden' : '';
     }
+    // Stealth hint message
+    const stealthHint = document.getElementById('stealth-hint');
+    if (stealthHint) stealthHint.style.display = this.stealth ? 'block' : 'none';
     // Highlight stealth label in help menu
     const stealthLabel = document.getElementById('stealth-label');
     if (stealthLabel) {
@@ -2415,6 +2440,8 @@ class InputHandler {
     this._enterLongPressTimer = null; // Timer for long-press detection
     this._enterHandledAsLong = false; // Whether current Enter press was handled as long-press
     this._enterDownHandled = false; // Whether Enter keydown was handled by main handler
+    this._timeSettingMode = false; // Whether we're in arrow-key time setting mode
+    this._timeSettingField = null; // 'round-min' | 'round-sec' | 'rest-min' | 'rest-sec'
     document.addEventListener('keydown', this._onKeyDown);
     document.addEventListener('keyup', this._onKeyUp);
   }
@@ -2431,12 +2458,14 @@ class InputHandler {
 
     // Numpad digit keys
     if (code && code.startsWith('Numpad')) {
+      // When NumLock is off, numpad keys send arrow/navigation key values — honour those first
+      if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight') return key;
       const suffix = code.slice(6); // e.g. '0', '1', ..., '9', 'Multiply', 'Enter', 'Decimal', 'Subtract', 'Add', 'Divide'
       if (suffix >= '0' && suffix <= '9') return suffix;
       if (suffix === 'Multiply') return '*';
       if (suffix === 'Divide') return '/';
       if (suffix === 'Enter') return 'Enter';
-      if (suffix === 'Decimal') return 'Backspace'; // Use decimal as backspace for convenience
+      if (suffix === 'Decimal') return '.';
       if (suffix === 'Clear') return 'Clear';
       if (suffix === 'Add') return '+';
       if (suffix === 'Subtract') return '-';
@@ -2452,6 +2481,11 @@ class InputHandler {
     if (key === 'Enter') return 'Enter';
     if (key === 'Backspace') return 'Backspace';
     if (key === 'Clear' || key === 'Delete') return 'Clear';
+    if (key === 'ArrowUp') return 'ArrowUp';
+    if (key === 'ArrowDown') return 'ArrowDown';
+    if (key === 'ArrowLeft') return 'ArrowLeft';
+    if (key === 'ArrowRight') return 'ArrowRight';
+    if (key === '.') return '.';
 
     return null;
   }
@@ -2464,21 +2498,52 @@ class InputHandler {
     const key = this._normalizeKey(event);
     if (key === null) return; // Unrecognized key — ignore
 
+    // Alias numpad digits 8/6/2/4 as arrow keys when not inside an overlay
+    const DIGIT_ARROW_MAP = { '8': 'ArrowUp', '6': 'ArrowRight', '2': 'ArrowDown', '4': 'ArrowLeft' };
+    const effectiveKey = (!this.overlayManager.isOpen() && DIGIT_ARROW_MAP[key])
+      ? DIGIT_ARROW_MAP[key] : key;
+
     // Ensure AudioContext is initialized on first user gesture
     if (this.audioManager) {
       this.audioManager._ensureContext();
     }
 
+    // Stealth mode: any key exits stealth, no other action
+    if (this.renderer.stealth) {
+      event.preventDefault();
+      this.renderer.toggleStealth();
+      this.renderer.applyStealth(this.state.phase);
+      return;
+    }
+
     // When overlay is open, route ALL input to overlay
     if (this.overlayManager.isOpen()) {
       event.preventDefault();
-      this.overlayManager.handleKey(key);
+      this.overlayManager.handleKey(effectiveKey);
+      return;
+    }
+
+    // --- Time-setting mode ---
+    if (this._timeSettingMode) {
+      event.preventDefault();
+      this._handleTimeSettingKey(effectiveKey);
+      return;
+    }
+
+    // Arrow keys enter time-setting mode (only when idle)
+    if ((effectiveKey === 'ArrowUp' || effectiveKey === 'ArrowDown' || effectiveKey === 'ArrowLeft' || effectiveKey === 'ArrowRight') &&
+        this.state.phase === PHASES.IDLE) {
+      // Block if a training/competition preset with custom round durations is active
+      // (user must long-press Enter to cancel first)
+      if (this.state.roundDurations) return;
+      event.preventDefault();
+      this._enterTimeSetting();
       return;
     }
 
     // Overlay is closed — handle main controls
     event.preventDefault();
-    switch (key) {
+    switch (effectiveKey) {
       case 'Enter':
         // Long-press detection: defer action until keyup or 800ms timeout
         if (event.repeat) break; // Ignore key repeat events
@@ -2491,87 +2556,8 @@ class InputHandler {
         }, 800);
         break;
       case '0':
-        // Disabled — stop/cancel is now handled via long-press Enter
-        break;
-      case '1':
-        // Inline round duration edit (only when idle)
-        if (this.state.phase !== PHASES.IDLE) break;
-        this.overlayManager.showInlineTimeEntry('ROUND', (totalSeconds) => {
-          this.state.config.roundDurationSec = totalSeconds;
-          this._cancelPreset();
-          StorageManager.save(this.state.config);
-          if (this.state.phase === PHASES.IDLE) {
-            this.state.remainingSec = totalSeconds;
-            this.renderer.updateRoundDisplay(totalSeconds, false);
-          }
-        }, this.state.config.roundDurationSec, this.renderer.roundTimerEl);
-        break;
-      case '2':
-        // Inline rest duration edit (only when idle)
-        if (this.state.phase !== PHASES.IDLE) break;
-        this.overlayManager.showInlineTimeEntry('REST', (totalSeconds) => {
-          this.state.config.restDurationSec = totalSeconds;
-          this._cancelPreset();
-          StorageManager.save(this.state.config);
-          if (this.state.phase === PHASES.IDLE) {
-            this.renderer.updateRestDisplay(totalSeconds, false);
-          }
-        }, this.state.config.restDurationSec, this.renderer.restTimerEl);
-        break;
-      case '3':
-        // Set number of rounds (only when idle)
-        if (this.state.phase !== PHASES.IDLE) break;
-        this.overlayManager.showRoundsEntry(this.state.config.numRounds, (value) => {
-          this.state.config.numRounds = value;
-          this._cancelPreset();
-          StorageManager.save(this.state.config);
-          this.renderer.updateRoundCounter(
-            this.state.phase === PHASES.IDLE ? 0 : this.state.currentRound,
-            value
-          );
-        });
-        break;
-      case '7':
-        // Quick timer (only when idle)
-        if (this.state.phase !== PHASES.IDLE) break;
-        if (this.state.phase === PHASES.IDLE) {
-          this.overlayManager.showTimeEntry('QUICK TIMER', (totalSeconds) => {
-            // Save current config so we can restore after quick timer ends
-            this.state._quickTimerRestore = {
-              roundDurationSec: this.state.config.roundDurationSec,
-              restDurationSec: this.state.config.restDurationSec,
-              numRounds: this.state.config.numRounds,
-              prepDurationSec: this.state.config.prepDurationSec,
-              roundDurations: this.state.roundDurations,
-              restDurations: this.state.restDurations,
-              presetName: this.state._presetName
-            };
-            // Set up a single round with the entered time
-            this.state.config.roundDurationSec = totalSeconds;
-            this.state.config.numRounds = 1;
-            this.state.remainingSec = totalSeconds;
-            this.state.roundDurations = null;
-            this.state.restDurations = null;
-            this.state._presetName = 'Quick Timer';
-            // Update display and auto-start
-            this.renderer.updateRoundDisplay(totalSeconds, false);
-            this.renderer.updateRoundCounter(0, 1);
-            this.renderer.updatePresetLabel('Quick Timer');
-            this.renderer.setQuickTimerMode();
-            this.engine.start();
-          }, 0);
-        }
-        break;
-      case '8':
-        // Toggle stealth mode
-        this.renderer.toggleStealth();
-        this.renderer.applyStealth(this.state.phase);
-        break;
-      case '9':
-        // Show weekly class schedule
-        if (this._scheduleManager) {
-          this.overlayManager.showSchedule(this._scheduleManager._schedule);
-        }
+        // Shortcut for long-press Enter (stop/cancel/reset)
+        this._handleEnterLongPress();
         break;
       case 'Clear':
         // Disabled — reset is now handled via long-press Enter when idle
@@ -2599,9 +2585,188 @@ class InputHandler {
         }
         break;
       default:
-        // Ignore other recognized but unhandled keys (e.g. 3-9 when no overlay)
+        // '.' toggles stealth mode
+        if (effectiveKey === '.') {
+          this.renderer.toggleStealth();
+          this.renderer.applyStealth(this.state.phase);
+        }
         break;
     }
+  }
+
+  /**
+   * Enter time-setting mode, starting at round minutes.
+   */
+  _enterTimeSetting() {
+    this._timeSettingMode = true;
+    this._timeSettingField = 'round-min';
+    this._renderTimeSettingDisplay();
+    this._updateTimeSettingBar();
+  }
+
+  /**
+   * Exit time-setting mode and clean up blinking.
+   */
+  _exitTimeSetting() {
+    this._timeSettingMode = false;
+    this._timeSettingField = null;
+    // Remove time-setting classes from both timer elements
+    this.renderer.roundTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
+    this.renderer.restTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
+    // Hide instruction bar
+    const bar = document.getElementById('edit-instruction-bar');
+    if (bar) { bar.classList.remove('active'); bar.innerHTML = ''; }
+  }
+
+  /**
+   * Render the timer display with span-wrapped digit groups for selective blinking.
+   */
+  _renderTimeSettingDisplay() {
+    // Update displayed values (spans are always present via updateRoundDisplay/updateRestDisplay)
+    this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
+    this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
+
+    // Apply the right CSS class based on current field
+    this.renderer.roundTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
+    this.renderer.restTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
+
+    if (this._timeSettingField === 'round-min') {
+      this.renderer.roundTimerEl.classList.add('time-setting-minutes');
+    } else if (this._timeSettingField === 'round-sec') {
+      this.renderer.roundTimerEl.classList.add('time-setting-seconds');
+    } else if (this._timeSettingField === 'rest-min') {
+      this.renderer.restTimerEl.classList.add('time-setting-minutes');
+    } else if (this._timeSettingField === 'rest-sec') {
+      this.renderer.restTimerEl.classList.add('time-setting-seconds');
+    }
+  }
+
+  /**
+   * Show the instruction bar for time-setting mode.
+   */
+  _updateTimeSettingBar() {
+    const bar = document.getElementById('edit-instruction-bar');
+    if (!bar) return;
+    const fieldLabels = {
+      'round-min': 'Round Minutes',
+      'round-sec': 'Round Seconds',
+      'rest-min': 'Rest Minutes',
+      'rest-sec': 'Rest Seconds'
+    };
+    const label = fieldLabels[this._timeSettingField] || '';
+    bar.innerHTML =
+      `<div>Editing: ${label}</div>` +
+      `<div class="edit-hint">` +
+      `<span class="key-badge">+</span> / <span class="key-badge">−</span> adjust &nbsp; ` +
+      `<span class="key-badge">◀▶</span> switch digits &nbsp; ` +
+      `<span class="key-badge">▲▼</span> switch timer &nbsp; ` +
+      `<span class="key-badge">Enter</span> <span class="key-badge">*</span> <span class="key-badge">/</span> exit` +
+      `</div>`;
+    bar.classList.add('active');
+  }
+
+  /**
+   * Handle a key press while in time-setting mode.
+   */
+  _handleTimeSettingKey(key) {
+    const field = this._timeSettingField;
+
+    // Navigation
+    if (key === 'ArrowRight') {
+      if (field === 'round-min') this._timeSettingField = 'round-sec';
+      else if (field === 'rest-min') this._timeSettingField = 'rest-sec';
+      // right on seconds fields does nothing
+      this._renderTimeSettingDisplay();
+      this._updateTimeSettingBar();
+      return;
+    }
+    if (key === 'ArrowLeft') {
+      if (field === 'round-sec') this._timeSettingField = 'round-min';
+      else if (field === 'rest-sec') this._timeSettingField = 'rest-min';
+      // left on minutes fields does nothing
+      this._renderTimeSettingDisplay();
+      this._updateTimeSettingBar();
+      return;
+    }
+    if (key === 'ArrowDown') {
+      if (field === 'round-min') this._timeSettingField = 'rest-min';
+      else if (field === 'round-sec') this._timeSettingField = 'rest-min';
+      // down on rest fields does nothing
+      this._renderTimeSettingDisplay();
+      this._updateTimeSettingBar();
+      return;
+    }
+    if (key === 'ArrowUp') {
+      if (field === 'rest-min') this._timeSettingField = 'round-min';
+      else if (field === 'rest-sec') this._timeSettingField = 'round-min';
+      // up on round fields does nothing
+      this._renderTimeSettingDisplay();
+      this._updateTimeSettingBar();
+      return;
+    }
+
+    // +/- adjustment
+    if (key === '+' || key === '-') {
+      this._adjustTimeSettingValue(key === '+' ? 1 : -1);
+      return;
+    }
+
+    // Exit keys: Enter, *, /
+    if (key === 'Enter' || key === '*' || key === '/') {
+      // Save and exit time-setting mode
+      StorageManager.save(this.state.config);
+      this.state.remainingSec = this.state.config.roundDurationSec;
+      this._exitTimeSetting();
+
+      // Now perform the key's normal action
+      if (key === 'Enter') {
+        if (this.state.config.roundDurationSec === 0) {
+          this.audioManager.playMuffle();
+        } else {
+          this.engine.start();
+        }
+      } else if (key === '*') {
+        this.overlayManager.showTrainingMenu({ ...this.state.config }, (updatedConfig) => {
+          this._applyMenuConfig(updatedConfig);
+        });
+      } else if (key === '/') {
+        this.overlayManager.showCompetitionMenu({ ...this.state.config }, (updatedConfig) => {
+          this._applyMenuConfig(updatedConfig);
+        });
+      }
+      return;
+    }
+
+    // All other keys ignored in time-setting mode
+  }
+
+  /**
+   * Adjust the value of the currently selected time-setting field.
+   * @param {number} direction - +1 or -1
+   */
+  _adjustTimeSettingValue(direction) {
+    const field = this._timeSettingField;
+    const isRound = field === 'round-min' || field === 'round-sec';
+    const configKey = isRound ? 'roundDurationSec' : 'restDurationSec';
+    const totalSec = this.state.config[configKey];
+    let mins = Math.floor(totalSec / 60);
+    let secs = totalSec % 60;
+
+    if (field === 'round-min' || field === 'rest-min') {
+      // Minutes: increment by 1, clamp 0–30
+      mins += direction;
+      if (mins < 0) mins = 0;
+      if (mins > 30) mins = 30;
+    } else {
+      // Seconds: increment by 15, loop 0→15→30→45→0 and 0→45→30→15→0
+      secs += direction * 15;
+      if (secs > 45) secs = 0;
+      if (secs < 0) secs = 45;
+    }
+
+    this.state.config[configKey] = mins * 60 + secs;
+    this._cancelPreset();
+    this._renderTimeSettingDisplay();
   }
 
   /**
@@ -2678,6 +2843,11 @@ class InputHandler {
   _handleEnterShortPress() {
     if (this.overlayManager.isOpen()) return;
     if (this.state.phase === PHASES.IDLE) {
+      // Don't start if round duration is 0
+      if (this.state.config.roundDurationSec === 0) {
+        this.audioManager.playMuffle();
+        return;
+      }
       this.engine.start();
     } else if (this.state.paused) {
       this.engine.resume();
