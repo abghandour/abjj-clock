@@ -62,10 +62,20 @@
       font-size: clamp(1rem, 2.5vw, 3rem);
       color: var(--text-clock);
       font-variant-numeric: tabular-nums;
+      transition: font-size 0.5s ease-in-out;
+    }
+
+    body:not(.timer-idle) #clock-area {
+      font-size: clamp(2.5rem, 6.25vw, 7.5rem);
+    }
+
+    body:not(.timer-idle) #temperature,
+    body:not(.timer-idle) #day-of-week {
+      display: none;
     }
 
     #clock {
-      font-family: sans-serif;
+      font-family: 'DSEG7', sans-serif;
       color: white;
       font-weight: bold;
     }
@@ -73,6 +83,13 @@
     .clock-ampm {
       font-size: 0.6em;
       vertical-align: baseline;
+      display: none;
+    }
+
+    .clock-seconds {
+      font-size: 0.5em;
+      vertical-align: baseline;
+      display: none;
     }
 
     #day-of-week {
@@ -90,7 +107,7 @@
     /* Big clock - visible only when timer is idle */
     #big-clock {
       position: fixed;
-      top: 37%;
+      top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
       font-family: 'DSEG7', sans-serif;
@@ -118,7 +135,8 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 2vh;
+      gap: 0.5vh;
+      padding-top: 12vh;
       transition: all 0.5s ease-in-out;
       transform-origin: center center;
     }
@@ -128,16 +146,34 @@
       position: absolute;
       bottom: 3vh;
       left: 3vw;
-      transform: scale(0.5);
+      transform: scale(0.3);
       transform-origin: bottom left;
+    }
+
+    body.timer-idle #timer-area.time-setting-active {
+      transform: scale(0.45);
+    }
+
+    .time-setting-active #round-timer,
+    .time-setting-active #rest-timer {
+      opacity: 1 !important;
+    }
+
+    .time-setting-active #round-label,
+    .time-setting-active #rest-label {
+      opacity: 1 !important;
+    }
+
+    #timer-area.time-setting-active {
+      z-index: 999;
     }
 
     /* Preset label */
     #preset-label {
-      font-size: clamp(0.8rem, 1.8vw, 2rem);
+      font-size: clamp(0.9rem, 2vw, 2.5rem);
       color: var(--text-muted);
       text-align: center;
-      min-height: 1.5em;
+      min-height: 1.2em;
     }
 
     #preset-label svg {
@@ -148,18 +184,18 @@
     /* Round timer */
     #round-section {
       text-align: center;
-      border: 2px solid rgba(255,255,255,0.12);
+      border: none;
       border-radius: 0.5rem;
-      padding: 1.5vh 1vw;
-      background: var(--text-round);
+      padding: 0;
+      background: none;
     }
 
     #round-label {
-      font-size: clamp(1.2rem, 3vw, 4rem);
-      color: #000000;
+      font-size: clamp(0.9rem, 2vw, 2.5rem);
+      color: var(--text-round);
       text-transform: uppercase;
       letter-spacing: 0.3em;
-      margin-bottom: 2vh;
+      margin-bottom: 0.5vh;
     }
 
     #round-timer {
@@ -169,6 +205,10 @@
       color: #000000;
       line-height: 1;
       font-variant-numeric: tabular-nums;
+      background: var(--text-round);
+      border-radius: 0.5rem;
+      padding: 1.5vh 1vw;
+      border: 2px solid rgba(255,255,255,0.12);
     }
 
     #round-timer.editing, #rest-timer.editing {
@@ -284,18 +324,18 @@
     #rest-section {
       text-align: center;
       margin-top: 1vh;
-      border: 2px solid rgba(255,255,255,0.12);
+      border: none;
       border-radius: 0.5rem;
-      padding: 1.5vh 1vw;
-      background: var(--text-rest);
+      padding: 0;
+      background: none;
     }
 
     #rest-label {
       font-size: clamp(0.9rem, 2vw, 2.5rem);
-      color: #000000;
+      color: var(--text-rest);
       text-transform: uppercase;
       letter-spacing: 0.3em;
-      margin-bottom: 2vh;
+      margin-bottom: 1vh;
     }
 
     #rest-timer {
@@ -305,6 +345,10 @@
       color: #000000;
       line-height: 1;
       font-variant-numeric: tabular-nums;
+      background: var(--text-rest);
+      border-radius: 0.5rem;
+      padding: 1.5vh 1vw;
+      border: 2px solid rgba(255,255,255,0.12);
     }
 
     /* Active timer border */
@@ -356,6 +400,7 @@
     }
 
     #academy-logo {
+      display: none;
       height: clamp(3rem, 6vh, 8rem);
       width: auto;
       object-fit: contain;
@@ -385,9 +430,10 @@
     /* Class progress circle */
     #class-progress {
       position: absolute;
-      top: calc(2vh + clamp(3rem, 6vh, 8rem) + 1.5vh);
-      right: 3vw;
-      display: none;
+      top: calc(2vh - 15px);
+      left: 50%;
+      transform: translateX(-50%);
+      display: block;
     }
 
     #class-progress.active {
@@ -799,9 +845,9 @@
 
   <!-- Clock area - top right -->
   <div id="clock-area">
+    <span id="temperature" style="display:none;"></span>
     <span id="day-of-week"></span>
     <span id="clock">00:00:00</span>
-    <span id="temperature" style="display:none;"></span>
   </div>
 
   <!-- Main timer area - centered -->
@@ -841,7 +887,7 @@
   </div>
 
   <!-- Class progress circle - below top-left bar -->
-  <canvas id="class-progress" width="120" height="120"></canvas>
+  <canvas id="class-progress" width="160" height="160"></canvas>
 
   <!-- Help menu - bottom right -->
   <div id="help-menu">

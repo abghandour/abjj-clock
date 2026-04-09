@@ -405,7 +405,7 @@ class TimerEngine {
           // Last round in limited mode — skip rest, go straight to IDLE
           this.stop();
         } else {
-          // Check if rest duration is 0 — skip rest, go directly to next round
+0          // Check if rest duration is 0 — skip rest, go directly to next round
           const restIdx = this.state.currentRound - 1;
           const rd = this.state.restDurations;
           const restSec = rd ? rd[restIdx % rd.length] : this.state.config.restDurationSec;
@@ -724,12 +724,15 @@ class Renderer {
     }
     if (this.roundSectionEl) {
       this.roundSectionEl.classList.toggle('active', isActive);
+      const spans = this.roundTimerEl ? this.roundTimerEl.querySelectorAll('.ts-minutes, .ts-seconds') : [];
       if (isActive && remainingSec <= 10) {
-        this.roundSectionEl.style.backgroundColor = 'var(--accent-yellow)';
-        this.roundSectionEl.style.borderColor = 'var(--accent-yellow)';
+        this.roundTimerEl.style.backgroundColor = 'var(--accent-yellow)';
+        this.roundTimerEl.style.borderColor = 'var(--accent-yellow)';
+        spans.forEach(s => s.style.borderColor = 'var(--accent-yellow)');
       } else {
-        this.roundSectionEl.style.backgroundColor = '';
-        this.roundSectionEl.style.borderColor = '';
+        this.roundTimerEl.style.backgroundColor = '';
+        this.roundTimerEl.style.borderColor = '';
+        spans.forEach(s => s.style.borderColor = '');
       }
     }
   }
@@ -766,7 +769,11 @@ class Renderer {
       const time = now.toLocaleTimeString('en-US', { hour12: true });
       const match = time.match(/^(.*\s?)(AM|PM)$/i);
       if (match) {
-        this.clockEl.innerHTML = `${match[1]}<span class="clock-ampm">${match[2]}</span>`;
+        const timePart = match[1].trim();
+        const lastColon = timePart.lastIndexOf(':');
+        const hhmm = timePart.substring(0, lastColon);
+        const ss = timePart.substring(lastColon);
+        this.clockEl.innerHTML = `${hhmm}<span class="clock-seconds">${ss}</span> <span class="clock-ampm">${match[2]}</span>`;
       } else {
         this.clockEl.textContent = time;
       }
@@ -1280,7 +1287,7 @@ class ClassProgressRenderer {
    * Redraw the circle based on current time.
    */
   draw() {
-    if (!this.ctx || !this._activeClass) return;
+    if (!this.ctx) return;
 
     const canvas = this.canvas;
     const ctx = this.ctx;
@@ -1288,6 +1295,24 @@ class ClassProgressRenderer {
     const cx = size / 2;
     const cy = size / 2;
     const radius = size / 2 - 4;
+
+    ctx.clearRect(0, 0, size, size);
+
+    // Always draw the outer border ring
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
+    ctx.strokeStyle = '#444466';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // No active class — just draw the logo
+    if (!this._activeClass) {
+      if (this._logoImg) {
+        const logoSize = radius * 1.8;
+        ctx.drawImage(this._logoImg, cx - logoSize / 2, cy - logoSize / 2, logoSize, logoSize);
+      }
+      return;
+    }
 
     const [startH, startM] = this._activeClass.startTime.split(':').map(Number);
     const [endH, endM] = this._activeClass.endTime.split(':').map(Number);
@@ -1303,15 +1328,6 @@ class ClassProgressRenderer {
     const elapsed = Math.max(0, nowMin - startMin);
     const slicesGone = Math.floor(elapsed / 5);
     const slicesRemaining = Math.max(0, totalSlices - slicesGone);
-
-    ctx.clearRect(0, 0, size, size);
-
-    // Always draw the full outer border ring
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
-    ctx.strokeStyle = '#444466';
-    ctx.lineWidth = 2;
-    ctx.stroke();
 
     if (slicesRemaining === 0) return;
 
@@ -1343,15 +1359,15 @@ class ClassProgressRenderer {
       ctx.fill();
     }
 
-    // Center hole for donut look
+    // Center hole for donut look (50% smaller ring)
     ctx.beginPath();
-    ctx.arc(cx, cy, radius * 0.45, 0, 2 * Math.PI);
+    ctx.arc(cx, cy, radius * 0.725, 0, 2 * Math.PI);
     ctx.fillStyle = '#1a1a2e';
     ctx.fill();
 
     // Draw logo in center
     if (this._logoImg) {
-      const logoSize = radius * 1.5;
+      const logoSize = radius * 1.8;
       ctx.drawImage(this._logoImg, cx - logoSize / 2, cy - logoSize / 2, logoSize, logoSize);
     }
   }
@@ -2600,6 +2616,8 @@ class InputHandler {
   _enterTimeSetting() {
     this._timeSettingMode = true;
     this._timeSettingField = 'round-min';
+    const timerArea = document.getElementById('timer-area');
+    if (timerArea) timerArea.classList.add('time-setting-active');
     this._renderTimeSettingDisplay();
     this._updateTimeSettingBar();
   }
@@ -2613,6 +2631,8 @@ class InputHandler {
     // Remove time-setting classes from both timer elements
     this.renderer.roundTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
     this.renderer.restTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
+    const timerArea = document.getElementById('timer-area');
+    if (timerArea) timerArea.classList.remove('time-setting-active');
     // Hide instruction bar
     const bar = document.getElementById('edit-instruction-bar');
     if (bar) { bar.classList.remove('active'); bar.innerHTML = ''; }
@@ -2711,8 +2731,8 @@ class InputHandler {
       return;
     }
 
-    // Exit keys: Enter, *, /
-    if (key === 'Enter' || key === '*' || key === '/') {
+    // Exit keys: Enter, *, /, 0
+    if (key === 'Enter' || key === '*' || key === '/' || key === '0') {
       // Save and exit time-setting mode
       StorageManager.save(this.state.config);
       this.state.remainingSec = this.state.config.roundDurationSec;
@@ -2734,6 +2754,7 @@ class InputHandler {
           this._applyMenuConfig(updatedConfig);
         });
       }
+      // '0' just exits, no further action
       return;
     }
 
