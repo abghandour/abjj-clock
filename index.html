@@ -51,13 +51,13 @@
       position: relative;
     }
 
-    /* Clock area - top right */
-    #clock-area {
+    /* Top right bar */
+    #top-right-bar {
       position: absolute;
       top: 2vh;
       right: 3vw;
       display: flex;
-      align-items: baseline;
+      align-items: center;
       gap: 1.5vw;
       font-size: clamp(1rem, 2.5vw, 3rem);
       color: var(--text-clock);
@@ -65,14 +65,6 @@
       transition: font-size 0.5s ease-in-out;
     }
 
-    body:not(.timer-idle) #clock-area {
-      font-size: clamp(2.5rem, 6.25vw, 7.5rem);
-    }
-
-    body:not(.timer-idle) #temperature,
-    body:not(.timer-idle) #day-of-week {
-      display: none;
-    }
 
     #clock {
       font-family: 'DSEG7', sans-serif;
@@ -89,45 +81,17 @@
     .clock-seconds {
       font-size: 0.5em;
       vertical-align: baseline;
-      display: none;
     }
 
     #day-of-week {
-      color: var(--text-muted);
-      font-size: 0.7em;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
+      display: none;
     }
 
     #temperature {
-      color: var(--text-muted);
-      font-size: 0.7em;
+      display: none;
     }
 
-    /* Big clock - visible only when timer is idle */
-    #big-clock {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      font-family: 'DSEG7', sans-serif;
-      font-size: clamp(6rem, 20vw, 24rem);
-      font-weight: 700;
-      color: var(--text-clock);
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.5s ease-in-out;
-      font-variant-numeric: tabular-nums;
-    }
-
-    #big-clock .big-clock-seconds {
-      font-size: 0.5em;
-      opacity: 0.7;
-    }
-
-    body.timer-idle #big-clock {
-      opacity: 1;
-    }
+    /* Big clock styles removed - unified into top-center-bar */
 
     /* Main timer area - centered */
     #timer-area {
@@ -145,13 +109,15 @@
     body.timer-idle #timer-area {
       position: absolute;
       bottom: 3vh;
-      left: 3vw;
+      left: 0;
+      right: 0;
+      margin: 0 auto;
       transform: scale(0.3);
-      transform-origin: bottom left;
+      transform-origin: bottom center;
     }
 
     body.timer-idle #timer-area.time-setting-active {
-      transform: scale(0.45);
+      transform: scale(0.54);
     }
 
     .time-setting-active #round-timer,
@@ -428,12 +394,37 @@
     }
 
     /* Class progress circle */
-    #class-progress {
+    body.timer-idle #top-center-bar {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: clamp(6rem, 20vw, 24rem);
+    }
+
+    body.timer-idle.time-setting #top-center-bar {
+      top: 35%;
+      font-size: clamp(5rem, 17.5vw, 20rem);
+    }
+
+    #top-center-bar {
       position: absolute;
-      top: calc(2vh - 15px);
+      top: 2vh;
       left: 50%;
       transform: translateX(-50%);
+      font-family: 'DSEG7', sans-serif;
+      font-weight: 700;
+      font-size: clamp(2.5rem, 6.25vw, 7.5rem);
+      color: var(--text-clock);
+      font-variant-numeric: tabular-nums;
+      transition: font-size 0.5s ease-in-out, top 0.5s ease-in-out, transform 0.5s ease-in-out;
+      z-index: 10;
+    }
+
+    #class-progress {
       display: block;
+      padding: 0;
+      margin: 0;
     }
 
     #class-progress.active {
@@ -840,14 +831,11 @@
 </head>
 <body>
 
-  <!-- Big clock - visible when timer is idle -->
-  <div id="big-clock"></div>
-
-  <!-- Clock area - top right -->
-  <div id="clock-area">
+  <!-- Top right bar -->
+  <div id="top-right-bar">
     <span id="temperature" style="display:none;"></span>
     <span id="day-of-week"></span>
-    <span id="clock">00:00:00</span>
+    <canvas id="class-progress" width="160" height="160"></canvas>
   </div>
 
   <!-- Main timer area - centered -->
@@ -886,8 +874,10 @@
     </div>
   </div>
 
-  <!-- Class progress circle - below top-left bar -->
-  <canvas id="class-progress" width="160" height="160"></canvas>
+  <!-- Class progress circle - top center -->
+  <div id="top-center-bar">
+    <span id="clock">00:00:00</span>
+  </div>
 
   <!-- Help menu - bottom right -->
   <div id="help-menu">

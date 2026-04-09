@@ -683,7 +683,6 @@ class Renderer {
     this.clockEl = document.getElementById('clock');
     this.dayOfWeekEl = document.getElementById('day-of-week');
     this.temperatureEl = document.getElementById('temperature');
-    this.bigClockEl = document.getElementById('big-clock');
     this.roundTimerEl = document.getElementById('round-timer');
     this.restTimerEl = document.getElementById('rest-timer');
     this.roundLabelEl = document.getElementById('round-label');
@@ -698,7 +697,7 @@ class Renderer {
     this.roundListEl = document.getElementById('round-list');
     this.nextClassDisplayEl = document.getElementById('next-class-display');
     this.restSectionEl = document.getElementById('rest-section');
-    this.clockAreaEl = document.getElementById('clock-area');
+    this.clockAreaEl = document.getElementById('top-right-bar');
     this.roundSectionEl = document.getElementById('round-section');
     this.presetLabelEl = document.getElementById('preset-label');
     this.stealth = false;
@@ -780,17 +779,6 @@ class Renderer {
     }
     if (this.dayOfWeekEl) {
       this.dayOfWeekEl.textContent = now.toLocaleDateString('en-US', { weekday: 'long' });
-    }
-    // Update big clock (HH:MM:ss format with smaller seconds)
-    if (this.bigClockEl) {
-      const h = now.getHours();
-      const m = now.getMinutes();
-      const s = now.getSeconds();
-      const h12 = h % 12 || 12;
-      const hStr = String(h12).padStart(2, '0');
-      const mStr = String(m).padStart(2, '0');
-      const sStr = String(s).padStart(2, '0');
-      this.bigClockEl.innerHTML = `${hStr}:${mStr}<span class="big-clock-seconds">:${sStr}</span>`;
     }
   }
 
@@ -917,7 +905,8 @@ class Renderer {
   applyStealth(phase) {
     const hidden = this.stealth ? 'hidden' : '';
     if (this.clockAreaEl) this.clockAreaEl.style.visibility = hidden;
-    if (this.bigClockEl) this.bigClockEl.style.visibility = hidden;
+    const topCenterBar = document.getElementById('top-center-bar');
+    if (topCenterBar) topCenterBar.style.visibility = hidden;
     if (this.roundSectionEl) this.roundSectionEl.style.visibility = hidden;
     if (this.roundCounterEl) this.roundCounterEl.style.visibility = hidden;
     if (this.prepCountdownEl) this.prepCountdownEl.style.visibility = hidden;
@@ -927,6 +916,11 @@ class Renderer {
     if (classTimeEl) classTimeEl.style.visibility = hidden;
     const classProgressEl = document.getElementById('class-progress');
     if (classProgressEl) classProgressEl.style.visibility = hidden;
+    // Hide round list, next class display, and bottom-left info
+    if (this.roundListEl) this.roundListEl.style.visibility = hidden;
+    if (this.nextClassDisplayEl) this.nextClassDisplayEl.style.visibility = hidden;
+    const bottomLeftInfo = document.getElementById('bottom-left-info');
+    if (bottomLeftInfo) bottomLeftInfo.style.visibility = hidden;
     // Rest section: visible during REST phase even in stealth
     if (this.restSectionEl) {
       this.restSectionEl.style.visibility = (this.stealth && phase !== PHASES.REST) ? 'hidden' : '';
@@ -2618,6 +2612,7 @@ class InputHandler {
     this._timeSettingField = 'round-min';
     const timerArea = document.getElementById('timer-area');
     if (timerArea) timerArea.classList.add('time-setting-active');
+    document.body.classList.add('time-setting');
     this._renderTimeSettingDisplay();
     this._updateTimeSettingBar();
   }
@@ -2633,6 +2628,7 @@ class InputHandler {
     this.renderer.restTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
     const timerArea = document.getElementById('timer-area');
     if (timerArea) timerArea.classList.remove('time-setting-active');
+    document.body.classList.remove('time-setting');
     // Hide instruction bar
     const bar = document.getElementById('edit-instruction-bar');
     if (bar) { bar.classList.remove('active'); bar.innerHTML = ''; }
