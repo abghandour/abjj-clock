@@ -546,9 +546,9 @@ class AudioManager {
     try {
       const audio = new Audio('boxing-bell-loud.mp3');
       audio.volume = APP_SETTINGS.audio.volume;
-      audio.play();
+      audio.play().catch(e => console.warn('End-of-round audio play failed:', e));
     } catch (e) {
-      // Silently disable on failure
+      console.warn('End-of-round audio error:', e);
     }
   }
 
@@ -602,9 +602,9 @@ class AudioManager {
     try {
       const audio = new Audio('boxing-bell-single-loud.mp3');
       audio.volume = APP_SETTINGS.audio.volume;
-      audio.play();
+      audio.play().catch(e => console.warn('End-of-class audio play failed:', e));
     } catch (e) {
-      // Silently disable on failure
+      console.warn('End-of-class audio error:', e);
     }
   }
 
@@ -3529,6 +3529,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         if (state.phase === PHASES.ROUND) renderer.applyFlash(renderer.roundTimerEl);
         if (state.phase === PHASES.REST) renderer.applyFlash(renderer.restTimerEl);
       } else if (alert.type === 'end_round') {
+        console.log('[AUDIO] end_round alert — playing bell');
         audioManager.playEndOfRoundBeep();
         renderer.applyScreenFlash();
       } else if (alert.type === 'end_rest') {
