@@ -1255,6 +1255,9 @@ class ClassProgressRenderer {
     this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
     this._activeClass = null;
     this._logoImg = null;
+    this._logoScale = 1.0; // 1.0 = full size, 0.0 = center size
+    this._targetLogoScale = 1.0;
+    this._animating = false;
     const img = new Image();
     img.src = 'logo.png';
     img.onload = () => {
@@ -1263,23 +1266,40 @@ class ClassProgressRenderer {
     };
   }
 
-  /**
-   * Set the active class. Pass null to hide.
-   * @param {Object|null} activeClass - ClassEntry with startTime/endTime
-   */
   setActiveClass(activeClass) {
+    const wasActive = !!this._activeClass;
     this._activeClass = activeClass;
     if (!activeClass) {
       if (this.canvas) this.canvas.classList.remove('active');
+      // Animate logo to full size
+      this._targetLogoScale = 1.0;
+      this._startAnimation();
       return;
     }
     if (this.canvas) this.canvas.classList.add('active');
-    this.draw();
+    // Animate logo to center size
+    this._targetLogoScale = 0.0;
+    this._startAnimation();
   }
 
-  /**
-   * Redraw the circle based on current time.
-   */
+  _startAnimation() {
+    if (this._animating) return;
+    this._animating = true;
+    const animate = () => {
+      const diff = this._targetLogoScale - this._logoScale;
+      if (Math.abs(diff) < 0.01) {
+        this._logoScale = this._targetLogoScale;
+        this._animating = false;
+        this.draw();
+        return;
+      }
+      this._logoScale += diff * 0.08;
+      this.draw();
+      requestAnimationFrame(animate);
+    };
+    requestAnimationFrame(animate);
+  }
+
   draw() {
     if (!this.ctx) return;
 
@@ -1292,76 +1312,76 @@ class ClassProgressRenderer {
 
     ctx.clearRect(0, 0, size, size);
 
-    // Always draw the outer border ring
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
-    ctx.strokeStyle = '#444466';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    // Logo size: interpolate between center size (1.8) and full size (2.0)
+    const logoMinScale = 1.8; // center/donut mode
+    const logoMaxScale = 2.1; // full canvas mode
+    const logoScale = logoMinScale + (logoMaxScale - logoMinScale) * this._logoScale;
 
-    // No active class — just draw the logo
-    if (!this._activeClass) {
+    // No active class or animating toward full — skip donut if fully expanded
+    if (!this._activeClass && this._logoScale >= 1.0) {
       if (this._logoImg) {
-        const logoSize = radius * 1.8;
+        const logoSize = radius * 2.1;
         ctx.drawImage(this._logoImg, cx - logoSize / 2, cy - logoSize / 2, logoSize, logoSize);
       }
       return;
     }
 
-    const [startH, startM] = this._activeClass.startTime.split(':').map(Number);
-    const [endH, endM] = this._activeClass.endTime.split(':').map(Number);
-    const startMin = startH * 60 + startM;
-    const endMin = endH * 60 + endM;
-    const totalMin = endMin - startMin;
-    if (totalMin <= 0) return;
+    if (this._activeClass) {
+      const [startH, startM] = this._activeClass.startTime.split(':').map(Number);
+      const [endH, endM] = this._activeClass.endTime.split(':').map(Number);
+      const startMin = startH * 60 + startM;
+      const endMin = endH * 60 + endM;
+      const totalMin = endMin - startMin;
 
-    const totalSlices = Math.ceil(totalMin / 5);
+      if (totalMin > 0) {
+        const totalSlices = totalMin;
+        const now = new Date();
+        const nowMin = now.getHours() * 60 + now.getMinutes();
+        const elapsed = Math.max(0, nowMin - startMin);
+        const slicesGone = Math.floor(elapsed);
+        const slicesRemaining = Math.max(0, totalSlices - slicesGone);
 
-    const now = new Date();
-    const nowMin = now.getHours() * 60 + now.getMinutes();
-    const elapsed = Math.max(0, nowMin - startMin);
-    const slicesGone = Math.floor(elapsed / 5);
-    const slicesRemaining = Math.max(0, totalSlices - slicesGone);
+        if (slicesRemaining > 0) {
+          const sliceAngle = (2 * Math.PI) / totalSlices;
+          const startAngle = -Math.PI / 2;
 
-    if (slicesRemaining === 0) return;
+          const elapsedFraction = elapsed / totalMin;
+          let fillColor;
+          if (elapsedFraction >= 0.9) fillColor = '#ff4444';
+          else if (elapsedFraction >= 0.5) fillColor = '#ffcc00';
+          else fillColor = '#00ff88';
 
-    const sliceAngle = (2 * Math.PI) / totalSlices;
-    const startAngle = -Math.PI / 2; // 12 o'clock
+          // Fade in slices based on animation progress (1.0 = hidden, 0.0 = fully visible)
+          const sliceOpacity = 1.0 - this._logoScale;
 
-    // Determine single color based on elapsed fraction
-    const elapsedFraction = elapsed / totalMin;
-    let fillColor;
-    if (elapsedFraction >= 0.9) {
-      fillColor = '#ff4444';
-    } else if (elapsedFraction >= 0.5) {
-      fillColor = '#ffcc00';
-    } else {
-      fillColor = '#00ff88';
+          ctx.globalAlpha = sliceOpacity;
+          for (let i = slicesGone; i < totalSlices; i++) {
+            const a1 = startAngle + i * sliceAngle;
+            const a2 = a1 + sliceAngle - 0.02;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.arc(cx, cy, radius, a1, a2);
+            ctx.closePath();
+            ctx.fillStyle = fillColor;
+            ctx.fill();
+          }
+          ctx.globalAlpha = 1.0;
+        }
+      }
     }
 
-    // Draw remaining slices
-    for (let i = slicesGone; i < totalSlices; i++) {
-      const a1 = startAngle + i * sliceAngle;
-      const a2 = a1 + sliceAngle - 0.03; // small gap between slices
-
+    // Center hole — interpolate size (larger when logo is full, smaller when in donut mode)
+    const holeRadius = radius * (0.725 + (1.0 - 0.725) * this._logoScale);
+    if (this._logoScale < 1.0) {
       ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.arc(cx, cy, radius, a1, a2);
-      ctx.closePath();
-
-      ctx.fillStyle = fillColor;
+      ctx.arc(cx, cy, holeRadius, 0, 2 * Math.PI);
+      ctx.fillStyle = '#1a1a2e';
       ctx.fill();
     }
 
-    // Center hole for donut look (50% smaller ring)
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius * 0.725, 0, 2 * Math.PI);
-    ctx.fillStyle = '#1a1a2e';
-    ctx.fill();
-
-    // Draw logo in center
+    // Draw logo
     if (this._logoImg) {
-      const logoSize = radius * 1.8;
+      const logoSize = radius * logoScale;
       ctx.drawImage(this._logoImg, cx - logoSize / 2, cy - logoSize / 2, logoSize, logoSize);
     }
   }
