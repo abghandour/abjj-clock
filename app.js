@@ -1866,6 +1866,12 @@ class OverlayManager {
       case '5':
         this._applyPreset(20, 10, 8, 'Tabata');
         break;
+      case '6':
+        if (this._dualTimerCallback) {
+          this.closeOverlay();
+          this._dualTimerCallback();
+        }
+        break;
       default:
         break;
     }
@@ -2372,7 +2378,8 @@ class OverlayManager {
       { key: '2', icon: ladderDownIcon, name: 'Ladder Down', note: 'Long → short' },
       { key: '3', icon: pyramidIcon, name: 'Pyramid', note: 'Short → long → short' },
       { key: '4', icon: invPyramidIcon, name: 'Inv. Pyramid', note: 'Long → short → long' },
-      { key: '5', icon: tabataIcon, name: 'Tabata', note: '20s on / 10s off × 8' }
+      { key: '5', icon: tabataIcon, name: 'Tabata', note: '20s on / 10s off × 8' },
+      { key: '6', icon: `<svg ${_s} fill="currentColor"><rect x="1" y="6" width="9" height="16" rx="1" opacity="0.8"/><rect x="14" y="6" width="9" height="16" rx="1" opacity="0.8"/></svg>`, name: 'Dual Timer', note: 'Two independent timers' }
     ];
 
     let rows = '';
@@ -2486,6 +2493,12 @@ class InputHandler {
     this._enterDownHandled = false; // Whether Enter keydown was handled by main handler
     this._timeSettingMode = false; // Whether we're in arrow-key time setting mode
     this._timeSettingField = null; // 'round-min' | 'round-sec' | 'rest-min' | 'rest-sec'
+    // Dual timer support
+    this._dualMode = false;
+    this._dualState = null;
+    this._dualEngine = null;
+    this._dualRendererEls = null;
+    this.overlayManager._dualTimerCallback = () => this._activateDualMode();
     document.addEventListener('keydown', this._onKeyDown);
     document.addEventListener('keyup', this._onKeyUp);
   }
@@ -2639,6 +2652,82 @@ class InputHandler {
   }
 
   /**
+   * Activate dual timer mode.
+   */
+  _activateDualMode() {
+    if (this._dualMode) return;
+    this._dualMode = true;
+
+    const config2 = { ...StorageManager.load() };
+    this._dualState = createTimerState(config2);
+    this._dualState.config.numRounds = 0;
+    this.state.config.numRounds = 0;
+    this.state._presetName = 'Dual Timer';
+
+    const panel2 = document.getElementById('timer-panel-2');
+    if (panel2) panel2.style.display = '';
+    const container = document.getElementById('dual-timer-container');
+    if (container) container.classList.add('dual-mode');
+
+    this._dualRendererEls = {
+      roundTimerEl: document.getElementById('round-timer-2'),
+      restTimerEl: document.getElementById('rest-timer-2'),
+    };
+
+    const dualState = this._dualState;
+    this._dualEngine = new TimerEngine(dualState,
+      (s) => {
+        if (s.phase === PHASES.ROUND) {
+          this._updateTimer2Display(this._dualRendererEls.roundTimerEl, s.remainingSec, true);
+          this._updateTimer2Display(this._dualRendererEls.restTimerEl, s.config.restDurationSec, false);
+        } else if (s.phase === PHASES.REST) {
+          this._updateTimer2Display(this._dualRendererEls.roundTimerEl, s.config.roundDurationSec, false);
+          this._updateTimer2Display(this._dualRendererEls.restTimerEl, s.remainingSec, true);
+        }
+      },
+      (s, oldPhase, newPhase) => {
+        if (newPhase === PHASES.ROUND) this.audioManager.playRoundStartFanfare();
+      }
+    );
+
+    const origTick2 = this._dualEngine.tick.bind(this._dualEngine);
+    this._dualEngine.tick = () => {
+      const alert = origTick2();
+      if (alert.type === 'end_round') this.audioManager.playEndOfRoundBeep();
+      else if (alert.type === 'end_rest') this.audioManager.playEndOfRestBeep();
+      else if (alert.type === 'countdown') this.audioManager.playCountdownBeep();
+      return alert;
+    };
+
+    this._updateTimer2Display(this._dualRendererEls.roundTimerEl, this._dualState.config.roundDurationSec, false);
+    this._updateTimer2Display(this._dualRendererEls.restTimerEl, this._dualState.config.restDurationSec, false);
+    this.renderer.updatePresetLabel('Dual Timer');
+    this.renderer.updateRoundCounter(0, 0);
+    this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
+    this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
+  }
+
+  _deactivateDualMode() {
+    if (!this._dualMode) return;
+    this._dualMode = false;
+    if (this._dualEngine) { this._dualEngine.stop(); this._dualEngine = null; }
+    this._dualState = null;
+    const panel2 = document.getElementById('timer-panel-2');
+    if (panel2) panel2.style.display = 'none';
+    const container = document.getElementById('dual-timer-container');
+    if (container) container.classList.remove('dual-mode');
+    this._dualRendererEls = null;
+  }
+
+  _updateTimer2Display(el, remainingSec, isActive) {
+    if (!el) return;
+    const mins = String(Math.floor(remainingSec / 60)).padStart(2, '0');
+    const secs = String(remainingSec % 60).padStart(2, '0');
+    el.innerHTML = `<span class="ts-minutes">${mins}</span>:<span class="ts-seconds">${secs}</span>`;
+    el.style.opacity = isActive ? '1' : '0.4';
+  }
+
+  /**
    * Enter time-setting mode, starting at round minutes.
    */
   _enterTimeSetting() {
@@ -2657,13 +2746,17 @@ class InputHandler {
   _exitTimeSetting() {
     this._timeSettingMode = false;
     this._timeSettingField = null;
-    // Remove time-setting classes from both timer elements
     this.renderer.roundTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
     this.renderer.restTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
+    if (this._dualRendererEls) {
+      const rt2 = this._dualRendererEls.roundTimerEl;
+      const xt2 = this._dualRendererEls.restTimerEl;
+      if (rt2) rt2.classList.remove('time-setting-minutes', 'time-setting-seconds');
+      if (xt2) xt2.classList.remove('time-setting-minutes', 'time-setting-seconds');
+    }
     const timerArea = document.getElementById('timer-area');
     if (timerArea) timerArea.classList.remove('time-setting-active');
     document.body.classList.remove('time-setting');
-    // Hide instruction bar
     const bar = document.getElementById('edit-instruction-bar');
     if (bar) { bar.classList.remove('active'); bar.innerHTML = ''; }
   }
@@ -2672,22 +2765,33 @@ class InputHandler {
    * Render the timer display with span-wrapped digit groups for selective blinking.
    */
   _renderTimeSettingDisplay() {
-    // Update displayed values (spans are always present via updateRoundDisplay/updateRestDisplay)
     this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
     this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
 
-    // Apply the right CSS class based on current field
     this.renderer.roundTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
     this.renderer.restTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
 
-    if (this._timeSettingField === 'round-min') {
-      this.renderer.roundTimerEl.classList.add('time-setting-minutes');
-    } else if (this._timeSettingField === 'round-sec') {
-      this.renderer.roundTimerEl.classList.add('time-setting-seconds');
-    } else if (this._timeSettingField === 'rest-min') {
-      this.renderer.restTimerEl.classList.add('time-setting-minutes');
-    } else if (this._timeSettingField === 'rest-sec') {
-      this.renderer.restTimerEl.classList.add('time-setting-seconds');
+    if (this._dualMode && this._dualState && this._dualRendererEls) {
+      this._updateTimer2Display(this._dualRendererEls.roundTimerEl, this._dualState.config.roundDurationSec, false);
+      this._updateTimer2Display(this._dualRendererEls.restTimerEl, this._dualState.config.restDurationSec, false);
+      const rt2 = this._dualRendererEls.roundTimerEl;
+      const xt2 = this._dualRendererEls.restTimerEl;
+      if (rt2) rt2.classList.remove('time-setting-minutes', 'time-setting-seconds');
+      if (xt2) xt2.classList.remove('time-setting-minutes', 'time-setting-seconds');
+    }
+
+    const field = this._timeSettingField;
+    if (field === 'round-min') this.renderer.roundTimerEl.classList.add('time-setting-minutes');
+    else if (field === 'round-sec') this.renderer.roundTimerEl.classList.add('time-setting-seconds');
+    else if (field === 'rest-min') this.renderer.restTimerEl.classList.add('time-setting-minutes');
+    else if (field === 'rest-sec') this.renderer.restTimerEl.classList.add('time-setting-seconds');
+    else if (this._dualRendererEls) {
+      const rt2 = this._dualRendererEls.roundTimerEl;
+      const xt2 = this._dualRendererEls.restTimerEl;
+      if (field === 't2-round-min' && rt2) rt2.classList.add('time-setting-minutes');
+      else if (field === 't2-round-sec' && rt2) rt2.classList.add('time-setting-seconds');
+      else if (field === 't2-rest-min' && xt2) xt2.classList.add('time-setting-minutes');
+      else if (field === 't2-rest-sec' && xt2) xt2.classList.add('time-setting-seconds');
     }
   }
 
@@ -2697,11 +2801,14 @@ class InputHandler {
   _updateTimeSettingBar() {
     const bar = document.getElementById('edit-instruction-bar');
     if (!bar) return;
-    const fieldLabels = {
-      'round-min': 'Round Minutes',
-      'round-sec': 'Round Seconds',
-      'rest-min': 'Rest Minutes',
-      'rest-sec': 'Rest Seconds'
+    const fieldLabels = this._dualMode ? {
+      'round-min': 'T1 Round Min', 'round-sec': 'T1 Round Sec',
+      'rest-min': 'T1 Rest Min', 'rest-sec': 'T1 Rest Sec',
+      't2-round-min': 'T2 Round Min', 't2-round-sec': 'T2 Round Sec',
+      't2-rest-min': 'T2 Rest Min', 't2-rest-sec': 'T2 Rest Sec'
+    } : {
+      'round-min': 'Round Minutes', 'round-sec': 'Round Seconds',
+      'rest-min': 'Rest Minutes', 'rest-sec': 'Rest Seconds'
     };
     const label = fieldLabels[this._timeSettingField] || '';
     bar.innerHTML =
@@ -2720,60 +2827,58 @@ class InputHandler {
    */
   _handleTimeSettingKey(key) {
     const field = this._timeSettingField;
+    const dual = this._dualMode;
 
-    // Navigation
+    // Navigation with dual mode support
     if (key === 'ArrowRight') {
-      if (field === 'round-min') this._timeSettingField = 'round-sec';
-      else if (field === 'rest-min') this._timeSettingField = 'rest-sec';
-      // right on seconds fields does nothing
-      this._renderTimeSettingDisplay();
-      this._updateTimeSettingBar();
-      return;
+      const nav = { 'round-min': 'round-sec', 'rest-min': 'rest-sec',
+        'round-sec': dual ? 't2-round-min' : 'round-sec',
+        'rest-sec': dual ? 't2-rest-min' : 'rest-sec',
+        't2-round-min': 't2-round-sec', 't2-round-sec': 't2-round-sec',
+        't2-rest-min': 't2-rest-sec', 't2-rest-sec': 't2-rest-sec' };
+      this._timeSettingField = nav[field] || field;
+      this._renderTimeSettingDisplay(); this._updateTimeSettingBar(); return;
     }
     if (key === 'ArrowLeft') {
-      if (field === 'round-sec') this._timeSettingField = 'round-min';
-      else if (field === 'rest-sec') this._timeSettingField = 'rest-min';
-      // left on minutes fields does nothing
-      this._renderTimeSettingDisplay();
-      this._updateTimeSettingBar();
-      return;
+      const nav = { 'round-min': 'round-min', 'round-sec': 'round-min',
+        'rest-min': 'rest-min', 'rest-sec': 'rest-min',
+        't2-round-min': 'round-sec', 't2-round-sec': 't2-round-min',
+        't2-rest-min': 'rest-sec', 't2-rest-sec': 't2-rest-min' };
+      this._timeSettingField = nav[field] || field;
+      this._renderTimeSettingDisplay(); this._updateTimeSettingBar(); return;
     }
     if (key === 'ArrowDown') {
-      if (field === 'round-min') this._timeSettingField = 'rest-min';
-      else if (field === 'round-sec') this._timeSettingField = 'rest-sec';
-      // down on rest fields does nothing
-      this._renderTimeSettingDisplay();
-      this._updateTimeSettingBar();
-      return;
+      const nav = { 'round-min': 'rest-min', 'round-sec': 'rest-sec',
+        't2-round-min': 't2-rest-min', 't2-round-sec': 't2-rest-sec' };
+      this._timeSettingField = nav[field] || field;
+      this._renderTimeSettingDisplay(); this._updateTimeSettingBar(); return;
     }
     if (key === 'ArrowUp') {
-      if (field === 'rest-min') this._timeSettingField = 'round-min';
-      else if (field === 'rest-sec') this._timeSettingField = 'round-sec';
-      // up on round fields does nothing
-      this._renderTimeSettingDisplay();
-      this._updateTimeSettingBar();
-      return;
+      const nav = { 'rest-min': 'round-min', 'rest-sec': 'round-sec',
+        't2-rest-min': 't2-round-min', 't2-rest-sec': 't2-round-sec' };
+      this._timeSettingField = nav[field] || field;
+      this._renderTimeSettingDisplay(); this._updateTimeSettingBar(); return;
     }
 
-    // +/- adjustment
     if (key === '+' || key === '-') {
       this._adjustTimeSettingValue(key === '+' ? 1 : -1);
       return;
     }
 
-    // Exit keys: Enter, *, /, 0
     if (key === 'Enter' || key === '*' || key === '/' || key === '0') {
-      // Save and exit time-setting mode
       StorageManager.save(this.state.config);
       this.state.remainingSec = this.state.config.roundDurationSec;
+      if (this._dualMode && this._dualState) {
+        this._dualState.remainingSec = this._dualState.config.roundDurationSec;
+      }
       this._exitTimeSetting();
 
-      // Now perform the key's normal action
       if (key === 'Enter') {
         if (this.state.config.roundDurationSec === 0) {
           this.audioManager.playMuffle();
         } else {
           this.engine.start();
+          if (this._dualMode && this._dualEngine) this._dualEngine.start();
         }
       } else if (key === '*') {
         this.overlayManager.showTrainingMenu({ ...this.state.config }, (updatedConfig) => {
@@ -2784,11 +2889,8 @@ class InputHandler {
           this._applyMenuConfig(updatedConfig);
         });
       }
-      // '0' just exits, no further action
       return;
     }
-
-    // All other keys ignored in time-setting mode
   }
 
   /**
@@ -2797,26 +2899,29 @@ class InputHandler {
    */
   _adjustTimeSettingValue(direction) {
     const field = this._timeSettingField;
-    const isRound = field === 'round-min' || field === 'round-sec';
+    const isTimer2 = field.startsWith('t2-');
+    const baseField = isTimer2 ? field.substring(3) : field;
+    const isRound = baseField === 'round-min' || baseField === 'round-sec';
     const configKey = isRound ? 'roundDurationSec' : 'restDurationSec';
-    const totalSec = this.state.config[configKey];
+    const targetState = isTimer2 ? this._dualState : this.state;
+    if (!targetState) return;
+
+    const totalSec = targetState.config[configKey];
     let mins = Math.floor(totalSec / 60);
     let secs = totalSec % 60;
 
-    if (field === 'round-min' || field === 'rest-min') {
-      // Minutes: increment by 1, clamp 0–30
+    if (baseField === 'round-min' || baseField === 'rest-min') {
       mins += direction;
       if (mins < 0) mins = 0;
       if (mins > 30) mins = 30;
     } else {
-      // Seconds: increment by 5, loop 0→5→...→55→0 and 0→55→...→5→0
       secs += direction * 5;
       if (secs > 55) secs = 0;
       if (secs < 0) secs = 55;
     }
 
-    this.state.config[configKey] = mins * 60 + secs;
-    this._cancelPreset();
+    targetState.config[configKey] = mins * 60 + secs;
+    if (!isTimer2) this._cancelPreset();
     this._renderTimeSettingDisplay();
   }
 
@@ -2900,12 +3005,15 @@ class InputHandler {
         return;
       }
       this.engine.start();
+      if (this._dualMode && this._dualEngine) this._dualEngine.start();
     } else if (this.state.paused) {
       this.engine.resume();
+      if (this._dualMode && this._dualEngine) this._dualEngine.resume();
       this.renderer.hidePauseOverlay();
       this.audioManager.playMuffle();
     } else {
       this.engine.pause();
+      if (this._dualMode && this._dualEngine) this._dualEngine.pause();
       this.renderer.showPauseOverlay();
       this.audioManager.playMuffle();
     }
@@ -2917,7 +3025,8 @@ class InputHandler {
   _handleEnterLongPress() {
     if (this.overlayManager.isOpen()) return;
     if (this.state.phase === PHASES.IDLE) {
-      // Same as Clear/Reset
+      // Same as Clear/Reset — also deactivate dual mode
+      this._deactivateDualMode();
       this.state.roundDurations = null;
       this.state.restDurations = null;
       this.state._presetName = null;
@@ -2949,6 +3058,10 @@ class InputHandler {
       }
       this.state._cancelledByUser = true;
       this.engine.stop();
+      if (this._dualMode && this._dualEngine) {
+        this._dualState._cancelledByUser = true;
+        this._dualEngine.stop();
+      }
       this.audioManager.playCancel();
       const rd = this.state.roundDurations;
       this.renderer.updateRoundDisplay(rd ? rd[0] : this.state.config.roundDurationSec, false);

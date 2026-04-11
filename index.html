@@ -174,7 +174,7 @@
       font-size: clamp(4rem, 18vw, 20rem);
       font-family: 'DSEG7', sans-serif;
       font-weight: 700;
-      color: #000000;
+      color: #000000 !important;
       line-height: 1;
       font-variant-numeric: tabular-nums;
       background: var(--text-round);
@@ -199,6 +199,7 @@
       border: 8px solid transparent;
       border-radius: 0.15em;
       display: inline-block;
+      color: inherit;
     }
 
     #round-section .ts-minutes,
@@ -314,7 +315,7 @@
       font-size: clamp(2.5rem, 10vw, 12rem);
       font-family: 'DSEG7', sans-serif;
       font-weight: 700;
-      color: #000000;
+      color: #000000 !important;
       line-height: 1;
       font-variant-numeric: tabular-nums;
       background: var(--text-rest);
@@ -833,6 +834,150 @@
       margin-top: 2vh;
     }
 
+    /* Dual timer layout */
+    #dual-timer-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+    }
+
+    #dual-timer-container.dual-mode {
+      flex-direction: row;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 12vw;
+    }
+
+    .timer-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #dual-timer-container.dual-mode .timer-panel {
+      flex: 1;
+      max-width: 50%;
+    }
+
+    /* Timer 2 styles */
+    #round-section-2 { text-align: center; }
+    #rest-section-2 { text-align: center; margin-top: 1vh; }
+
+    .round-label-2 {
+      font-size: clamp(0.9rem, 2vw, 2.5rem);
+      color: #5995f0;
+      text-transform: uppercase;
+      letter-spacing: 0.3em;
+      margin-bottom: 0.5vh;
+    }
+
+    .rest-label-2 {
+      font-size: clamp(0.9rem, 2vw, 2.5rem);
+      color: #cc3333;
+      text-transform: uppercase;
+      letter-spacing: 0.3em;
+      margin-bottom: 1vh;
+    }
+
+    #round-timer-2 {
+      font-size: clamp(4rem, 18vw, 20rem);
+      font-family: 'DSEG7', sans-serif;
+      font-weight: 700;
+      color: #000000;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      background: #5995f0;
+      border-radius: 0.5rem;
+      padding: 2vh 1.5vw;
+      border: 2px solid #5995f0;
+    }
+
+    #rest-timer-2 {
+      font-size: clamp(2.5rem, 10vw, 12rem);
+      font-family: 'DSEG7', sans-serif;
+      font-weight: 700;
+      color: #000000;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      background: #5995f0;
+      border-radius: 0.5rem;
+      padding: 2vh 1.5vw;
+      border: 2px solid #5995f0;
+    }
+
+    /* Dual mode font scaling */
+    #dual-timer-container.dual-mode #round-timer,
+    #dual-timer-container.dual-mode #round-timer-2 {
+      font-size: clamp(2rem, 9vw, 10rem);
+    }
+
+    #dual-timer-container.dual-mode #rest-timer,
+    #dual-timer-container.dual-mode #rest-timer-2 {
+      font-size: clamp(1.5rem, 5vw, 6rem);
+    }
+
+    #dual-timer-container.dual-mode #rest-timer {
+      background: var(--text-round);
+      border-color: var(--text-round);
+    }
+
+    #dual-timer-container.dual-mode #rest-section .ts-minutes,
+    #dual-timer-container.dual-mode #rest-section .ts-seconds {
+      border-color: var(--text-round);
+    }
+
+    #dual-timer-container.dual-mode #rest-timer-2 {
+      background: #5995f0;
+      border-color: #5995f0;
+    }
+
+    #dual-timer-container.dual-mode #rest-section-2 .ts-minutes,
+    #dual-timer-container.dual-mode #rest-section-2 .ts-seconds {
+      border-color: #5995f0;
+    }
+
+    #dual-timer-container.dual-mode #rest-label {
+      color: var(--text-round);
+    }
+
+    #dual-timer-container.dual-mode .rest-label-2 {
+      color: #5995f0;
+    }
+
+    /* Timer 2 digit span borders */
+    #round-section-2 .ts-minutes,
+    #round-section-2 .ts-seconds {
+      border-color: #5995f0;
+    }
+
+    #rest-section-2 .ts-minutes,
+    #rest-section-2 .ts-seconds {
+      border-color: #5995f0;
+    }
+
+    /* Time-setting for timer 2 */
+    #round-section-2 .time-setting-minutes .ts-minutes,
+    #round-section-2 .time-setting-seconds .ts-seconds,
+    #rest-section-2 .time-setting-minutes .ts-minutes,
+    #rest-section-2 .time-setting-seconds .ts-seconds {
+      border-color: #000000;
+      animation: blink 0.7s ease-in-out infinite;
+    }
+
+    /* Time-setting border must override dual-mode rest border colors */
+    #dual-timer-container.dual-mode #rest-section .time-setting-minutes .ts-minutes,
+    #dual-timer-container.dual-mode #rest-section .time-setting-seconds .ts-seconds,
+    #dual-timer-container.dual-mode #rest-section-2 .time-setting-minutes .ts-minutes,
+    #dual-timer-container.dual-mode #rest-section-2 .time-setting-seconds .ts-seconds {
+      border-color: #000000;
+    }
+
+    body.timer-idle #round-timer-2,
+    body.timer-idle #rest-timer-2 {
+      opacity: 1 !important;
+    }
+
     /* Stealth mode hint */
     #stealth-hint {
       display: none;
@@ -858,23 +1003,36 @@
 
   <!-- Main timer area - centered -->
   <div id="timer-area">
-    <!-- Round timer -->
-    <div id="round-section">
-      <div id="round-label-row">
-        <div id="preset-label"></div>
-        <div id="round-label">Round</div>
+    <div id="dual-timer-container">
+      <!-- Timer 1 (primary) -->
+      <div id="timer-panel-1" class="timer-panel">
+        <div id="round-section">
+          <div id="round-label-row">
+            <div id="preset-label"></div>
+            <div id="round-label">Round</div>
+          </div>
+          <div id="round-timer"><span class="ts-minutes">05</span>:<span class="ts-seconds">00</span></div>
+        </div>
+        <div id="rest-section">
+          <div id="rest-label">Rest</div>
+          <div id="rest-timer"><span class="ts-minutes">01</span>:<span class="ts-seconds">00</span></div>
+        </div>
+        <div id="round-counter"></div>
       </div>
-      <div id="round-timer"><span class="ts-minutes">05</span>:<span class="ts-seconds">00</span></div>
-    </div>
 
-    <!-- Rest timer -->
-    <div id="rest-section">
-      <div id="rest-label">Rest</div>
-      <div id="rest-timer"><span class="ts-minutes">01</span>:<span class="ts-seconds">00</span></div>
+      <!-- Timer 2 (dual mode only) -->
+      <div id="timer-panel-2" class="timer-panel" style="display:none;">
+        <div id="round-section-2">
+          <div class="round-label-2">Round</div>
+          <div id="round-timer-2"><span class="ts-minutes">05</span>:<span class="ts-seconds">00</span></div>
+        </div>
+        <div id="rest-section-2">
+          <div class="rest-label-2">Rest</div>
+          <div id="rest-timer-2"><span class="ts-minutes">01</span>:<span class="ts-seconds">00</span></div>
+        </div>
+        <div id="round-counter-2"></div>
+      </div>
     </div>
-
-    <!-- Round counter -->
-    <div id="round-counter"></div>
   </div>
 
   <!-- Prep countdown overlay -->
