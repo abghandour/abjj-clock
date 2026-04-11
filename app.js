@@ -595,6 +595,33 @@ class AudioManager {
   }
 
   /**
+   * Timer 2 end-of-round: different bell sound.
+   */
+  playEndOfRoundBeepT2() {
+    try {
+      const audio = new Audio('boxing-bell-single-loud.mp3');
+      audio.volume = APP_SETTINGS.audio.volume;
+      audio.play().catch(e => console.warn('T2 end-of-round audio play failed:', e));
+    } catch (e) {
+      console.warn('T2 end-of-round audio error:', e);
+    }
+  }
+
+  /**
+   * Timer 2 end-of-rest: higher-pitched tone (50% higher).
+   */
+  playEndOfRestBeepT2() {
+    this._playTone(APP_SETTINGS.audio.endOfRestFrequency * 1.5, APP_SETTINGS.audio.endOfRestDuration);
+  }
+
+  /**
+   * Timer 2 countdown: higher-pitched beep (50% higher).
+   */
+  playCountdownBeepT2() {
+    this._playTone(APP_SETTINGS.audio.countdownBeepFrequency * 1.5, APP_SETTINGS.audio.countdownBeepDuration);
+  }
+
+  /**
    * Loud, repeating descending ring to signal end of class.
    * Plays G5 → E5 → C5 pattern three times so it's unmissable.
    */
@@ -2669,6 +2696,9 @@ class InputHandler {
     const container = document.getElementById('dual-timer-container');
     if (container) container.classList.add('dual-mode');
 
+    const timerArea = document.getElementById('timer-area');
+    if (timerArea) timerArea.classList.add('dual-timer-active');
+
     this._dualRendererEls = {
       roundTimerEl: document.getElementById('round-timer-2'),
       restTimerEl: document.getElementById('rest-timer-2'),
@@ -2693,9 +2723,9 @@ class InputHandler {
     const origTick2 = this._dualEngine.tick.bind(this._dualEngine);
     this._dualEngine.tick = () => {
       const alert = origTick2();
-      if (alert.type === 'end_round') this.audioManager.playEndOfRoundBeep();
-      else if (alert.type === 'end_rest') this.audioManager.playEndOfRestBeep();
-      else if (alert.type === 'countdown') this.audioManager.playCountdownBeep();
+      if (alert.type === 'end_round') this.audioManager.playEndOfRoundBeepT2();
+      else if (alert.type === 'end_rest') this.audioManager.playEndOfRestBeepT2();
+      else if (alert.type === 'countdown') this.audioManager.playCountdownBeepT2();
       return alert;
     };
 
@@ -2716,6 +2746,8 @@ class InputHandler {
     if (panel2) panel2.style.display = 'none';
     const container = document.getElementById('dual-timer-container');
     if (container) container.classList.remove('dual-mode');
+    const timerArea = document.getElementById('timer-area');
+    if (timerArea) timerArea.classList.remove('dual-timer-active');
     this._dualRendererEls = null;
   }
 
