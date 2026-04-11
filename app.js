@@ -1775,11 +1775,13 @@ class OverlayManager {
     }
     const display = this._inputBuffer || '_';
     this.overlayEl.innerHTML =
+      `<div class="overlay-content">` +
       `<div class="overlay-prompt">Enter ${this._timeEntryLabel} duration:</div>` +
       `<div class="overlay-input">${display}</div>` +
       `<div class="overlay-error">${errorMsg}</div>` +
       `<div style="margin-top:1vh;font-size:clamp(2rem,5vw,5rem);color:var(--text-muted);text-align:center;">${preview}</div>` +
       `<div class="overlay-hint">0XX = seconds · &lt;60 = minutes · 530 = 5:30</div>` +
+      `</div>` +
       `<div style="position:absolute;bottom:2vh;right:3vw;color:var(--text-help);font-size:clamp(0.6rem,1.2vw,1.2rem);">* <svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg> Cancel</div>`;
     this.overlayEl.classList.add('active');
   }
@@ -1820,11 +1822,13 @@ class OverlayManager {
       defaultPreview = `<div style="margin-top:1vh;font-size:clamp(1.5rem,4vw,4rem);color:var(--text-muted);text-align:center;">${label}</div>`;
     }
     this.overlayEl.innerHTML =
+      `<div class="overlay-content">` +
       `<div class="overlay-prompt">Number of rounds (0 = repeat):</div>` +
       `<div class="overlay-input">${display}</div>` +
       defaultPreview +
       `<div class="overlay-error">${errorMsg}</div>` +
       `<div class="overlay-hint">Type digits, then press Enter</div>` +
+      `</div>` +
       `<div style="position:absolute;bottom:2vh;right:3vw;color:var(--text-help);font-size:clamp(0.6rem,1.2vw,1.2rem);">* <svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg> Cancel</div>`;
     this.overlayEl.classList.add('active');
   }
@@ -1890,10 +1894,12 @@ class OverlayManager {
     if (!this.overlayEl) return;
     const display = this._inputBuffer || '_';
     this.overlayEl.innerHTML =
+      `<div class="overlay-content">` +
       `<div class="overlay-prompt">${this._advancedSubPrompt}</div>` +
       `<div class="overlay-input">${display}</div>` +
       `<div class="overlay-error">${errorMsg}</div>` +
       `<div class="overlay-hint">Type digits, then press Enter to confirm</div>` +
+      `</div>` +
       `<div style="position:absolute;bottom:2vh;right:3vw;color:var(--text-help);font-size:clamp(0.6rem,1.2vw,1.2rem);">* <svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg> Cancel</div>`;
     this.overlayEl.classList.add('active');
   }
@@ -2023,12 +2029,14 @@ class OverlayManager {
       }
     }
     this.overlayEl.innerHTML =
+      `<div class="overlay-content">` +
       `<div style="font-size:clamp(2rem,5vw,5rem);color:var(--text-primary);margin-bottom:1vh;">${icon}${modeLabel}</div>` +
       `<div class="overlay-prompt">${prompt}</div>` +
       `<div class="overlay-input">${display}</div>` +
       defaultPreview +
       `<div class="overlay-error">${errorMsg}</div>` +
       `<div class="overlay-hint">Type digits, then press Enter to confirm</div>` +
+      `</div>` +
       `<div style="position:absolute;bottom:2vh;right:3vw;color:var(--text-help);font-size:clamp(0.6rem,1.2vw,1.2rem);">* <svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg> Cancel</div>`;
     this.overlayEl.classList.add('active');
   }
@@ -2205,6 +2213,7 @@ class OverlayManager {
     }
     const chainsawSvg = '<svg width="1.5em" height="1.5em" viewBox="0 0 24 24" style="vertical-align:-0.25em;margin-right:0.4em;" fill="currentColor"><rect x="2" y="14" width="3" height="8" rx="0.5"/><rect x="7" y="6" width="3" height="16" rx="0.5"/><rect x="12" y="14" width="3" height="8" rx="0.5"/><rect x="17" y="6" width="3" height="16" rx="0.5"/></svg>';
     this.overlayEl.innerHTML =
+      `<div class="overlay-content">` +
       `<div style="font-size:clamp(2rem,5vw,5rem);color:var(--text-primary);margin-bottom:1vh;">${chainsawSvg}Chainsaw</div>` +
       `<div class="overlay-prompt">${prompt}</div>` +
       `<div class="overlay-input">${display}</div>` +
@@ -2212,6 +2221,7 @@ class OverlayManager {
       `<div class="overlay-error">${errorMsg}</div>` +
       previewLine +
       `<div class="overlay-hint">${hint}</div>` +
+      `</div>` +
       `<div style="position:absolute;bottom:2vh;right:3vw;color:var(--text-help);font-size:clamp(0.6rem,1.2vw,1.2rem);">* <svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg> Cancel</div>`;
     this.overlayEl.classList.add('active');
   }
@@ -2310,6 +2320,10 @@ class OverlayManager {
 
     const presetNames = Object.keys(APP_SETTINGS.competitionPresets);
     let rows = '';
+    // Header row
+    rows += `<span></span><span></span><span></span>` +
+            `<span class="mg-note" style="color:var(--text-round);font-weight:700;">Round</span>` +
+            `<span class="mg-note" style="color:var(--text-rest);font-weight:700;">Rest</span>`;
     presetNames.forEach((name, i) => {
       const p = APP_SETTINGS.competitionPresets[name];
       const roundStr = formatTime(p.roundDurationSec);
@@ -2326,7 +2340,7 @@ class OverlayManager {
     const _arrow = '<svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg>';
 
     this.overlayEl.innerHTML =
-      `<div class="advanced-menu">` +
+      `<div class="advanced-menu overlay-content">` +
         `<div class="menu-title">Competition Presets</div>` +
         `<div class="menu-grid-5">${rows}</div>` +
         `<div class="menu-close"><span class="menu-key">/</span> ${_arrow} Close</div>` +
@@ -2372,7 +2386,7 @@ class OverlayManager {
     const _arrow = '<svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg>';
 
     this.overlayEl.innerHTML =
-      `<div class="advanced-menu">` +
+      `<div class="advanced-menu overlay-content">` +
         `<div class="menu-title">Training Presets</div>` +
         `<div class="menu-grid">${rows}</div>` +
         `<div class="menu-close"><span class="menu-key">*</span> ${_arrow} Close</div>` +
@@ -2428,7 +2442,7 @@ class OverlayManager {
       : '<span style="color:var(--accent-green);">+</span> Enable';
 
     this.overlayEl.innerHTML =
-      `<div class="schedule-overlay">`
+      `<div class="schedule-overlay overlay-content">`
       + `<div class="schedule-title">Weekly Schedule <span style="color:${statusColor};font-size:0.6em;">${statusText}</span></div>`
       + `<div class="schedule-grid">${cols}</div>`
       + `<div class="schedule-hint">${toggleHint} schedule features &nbsp;·&nbsp; Any other key to close</div>`
@@ -2726,7 +2740,7 @@ class InputHandler {
     }
     if (key === 'ArrowDown') {
       if (field === 'round-min') this._timeSettingField = 'rest-min';
-      else if (field === 'round-sec') this._timeSettingField = 'rest-min';
+      else if (field === 'round-sec') this._timeSettingField = 'rest-sec';
       // down on rest fields does nothing
       this._renderTimeSettingDisplay();
       this._updateTimeSettingBar();
@@ -2734,7 +2748,7 @@ class InputHandler {
     }
     if (key === 'ArrowUp') {
       if (field === 'rest-min') this._timeSettingField = 'round-min';
-      else if (field === 'rest-sec') this._timeSettingField = 'round-min';
+      else if (field === 'rest-sec') this._timeSettingField = 'round-sec';
       // up on round fields does nothing
       this._renderTimeSettingDisplay();
       this._updateTimeSettingBar();
@@ -2795,10 +2809,10 @@ class InputHandler {
       if (mins < 0) mins = 0;
       if (mins > 30) mins = 30;
     } else {
-      // Seconds: increment by 15, loop 0→15→30→45→0 and 0→45→30→15→0
-      secs += direction * 15;
-      if (secs > 45) secs = 0;
-      if (secs < 0) secs = 45;
+      // Seconds: increment by 5, loop 0→5→...→55→0 and 0→55→...→5→0
+      secs += direction * 5;
+      if (secs > 55) secs = 0;
+      if (secs < 0) secs = 55;
     }
 
     this.state.config[configKey] = mins * 60 + secs;

@@ -112,7 +112,7 @@
       left: 0;
       right: 0;
       margin: 0 auto;
-      transform: scale(0.3);
+      transform: scale(0.54);
       transform-origin: bottom center;
     }
 
@@ -120,13 +120,13 @@
       transform: scale(0.54);
     }
 
-    .time-setting-active #round-timer,
-    .time-setting-active #rest-timer {
+    body.timer-idle #round-timer,
+    body.timer-idle #rest-timer {
       opacity: 1 !important;
     }
 
-    .time-setting-active #round-label,
-    .time-setting-active #rest-label {
+    body.timer-idle #round-label,
+    body.timer-idle #rest-label {
       opacity: 1 !important;
     }
 
@@ -138,8 +138,15 @@
     #preset-label {
       font-size: clamp(0.9rem, 2vw, 2.5rem);
       color: var(--text-muted);
-      text-align: center;
-      min-height: 1.2em;
+      text-align: left;
+    }
+
+    #round-label-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      width: 100%;
+      margin-bottom: 0.5vh;
     }
 
     #preset-label svg {
@@ -161,7 +168,6 @@
       color: var(--text-round);
       text-transform: uppercase;
       letter-spacing: 0.3em;
-      margin-bottom: 0.5vh;
     }
 
     #round-timer {
@@ -173,8 +179,8 @@
       font-variant-numeric: tabular-nums;
       background: var(--text-round);
       border-radius: 0.5rem;
-      padding: 1.5vh 1vw;
-      border: 2px solid rgba(255,255,255,0.12);
+      padding: 2vh 1.5vw;
+      border: 2px solid var(--text-round);
     }
 
     #round-timer.editing, #rest-timer.editing {
@@ -183,14 +189,14 @@
 
     @keyframes blink {
       0%, 49% { opacity: 1; }
-      50%, 100% { opacity: 0.2; }
+      50%, 100% { opacity: 0.7; }
     }
 
     /* Time-setting mode: digit group base styles to prevent layout shift */
     .ts-minutes, .ts-seconds {
-      padding: 6px;
-      margin: 4px;
-      border: 2px solid transparent;
+      padding: 10px 6px;
+      margin: 2px;
+      border: 8px solid transparent;
       border-radius: 0.15em;
       display: inline-block;
     }
@@ -313,8 +319,8 @@
       font-variant-numeric: tabular-nums;
       background: var(--text-rest);
       border-radius: 0.5rem;
-      padding: 1.5vh 1vw;
-      border: 2px solid rgba(255,255,255,0.12);
+      padding: 2vh 1.5vw;
+      border: 2px solid var(--text-rest);
     }
 
     /* Active timer border */
@@ -396,14 +402,14 @@
     /* Class progress circle */
     body.timer-idle #top-center-bar {
       position: fixed;
-      top: 40%;
+      top: 30%;
       left: 50%;
       transform: translate(-50%, -50%);
-      font-size: clamp(6rem, 20vw, 24rem);
+      font-size: clamp(5rem, 17.5vw, 20rem);
     }
 
     body.timer-idle.time-setting #top-center-bar {
-      top: 35%;
+      top: 30%;
       font-size: clamp(5rem, 17.5vw, 20rem);
     }
 
@@ -473,6 +479,17 @@
 
     #overlay.active {
       display: flex;
+    }
+
+    #overlay .overlay-content {
+      background: rgba(20, 20, 30, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 1rem;
+      padding: 2rem 2.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
     }
 
     #overlay .overlay-prompt {
@@ -620,8 +637,9 @@
     #pause-overlay .pause-icon {
       display: flex;
       gap: clamp(1rem, 3vw, 4rem);
-      border: 3px solid rgba(255,255,255,0.5);
-      border-radius: 2rem;
+      background: rgba(20, 20, 30, 0.95);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 1rem;
       padding: clamp(2rem, 5vw, 6rem) clamp(2.5rem, 6vw, 8rem);
     }
 
@@ -840,12 +858,12 @@
 
   <!-- Main timer area - centered -->
   <div id="timer-area">
-    <!-- Preset label -->
-    <div id="preset-label"></div>
-
     <!-- Round timer -->
     <div id="round-section">
-      <div id="round-label">Round</div>
+      <div id="round-label-row">
+        <div id="preset-label"></div>
+        <div id="round-label">Round</div>
+      </div>
       <div id="round-timer"><span class="ts-minutes">05</span>:<span class="ts-seconds">00</span></div>
     </div>
 
