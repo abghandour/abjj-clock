@@ -112,7 +112,9 @@ const APP_SETTINGS = {
     fanfareNotes: [523, 659, 784],
     fanfareNoteDuration: 0.3,
     fanfareNoteGap: 0.12,
-    volume: 1.0
+    volume: 1.0,
+    classStartSound: false,
+    classEndSound: false
   },
   competitionPresets: {
     'Kids (under 15)': { roundDurationSec: 240, restDurationSec: 60, numRounds: 0 },
@@ -165,6 +167,8 @@ function applyConfigSettings(data) {
     if (typeof a.fanfareNoteDuration === 'number') s.fanfareNoteDuration = a.fanfareNoteDuration;
     if (typeof a.fanfareNoteGap === 'number') s.fanfareNoteGap = a.fanfareNoteGap;
     if (typeof a.volume === 'number') s.volume = a.volume;
+    if (typeof a.classStartSound === 'boolean') s.classStartSound = a.classStartSound;
+    if (typeof a.classEndSound === 'boolean') s.classEndSound = a.classEndSound;
   }
 
   // Override competition presets
@@ -534,6 +538,7 @@ class AudioManager {
       const audio = new Audio('boxing-bell-single-loud.mp3');
       audio.volume = APP_SETTINGS.audio.volume;
       audio.play();
+      setTimeout(() => { audio.pause(); audio.currentTime = 0; }, 2000);
     } catch (e) {
       // Silently disable on failure
     }
@@ -632,6 +637,19 @@ class AudioManager {
       audio.play().catch(e => console.warn('End-of-class audio play failed:', e));
     } catch (e) {
       console.warn('End-of-class audio error:', e);
+    }
+  }
+
+  /**
+   * Sound to signal the start of a class.
+   */
+  playStartOfClassRing() {
+    try {
+      const audio = new Audio('boxing-bell-single.mp3');
+      audio.volume = APP_SETTINGS.audio.volume;
+      audio.play().catch(e => console.warn('Start-of-class audio play failed:', e));
+    } catch (e) {
+      console.warn('Start-of-class audio error:', e);
     }
   }
 
@@ -989,19 +1007,18 @@ class Renderer {
   updateRoundCounter(current, total) {
     if (!this.roundCounterEl) return;
     if (current === 0) {
-      // Idle state: show repeat icon if unlimited, or round count if set
       if (total === 0) {
         this.roundCounterEl.innerHTML =
           `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.15em;margin-right:0.3em;"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>Repeat`;
       } else {
-        this.roundCounterEl.textContent = `${total} round${total > 1 ? 's' : ''}`;
+        this.roundCounterEl.innerHTML = `${total} round${total > 1 ? 's' : ''}`;
       }
       return;
     }
     if (total === 0) {
-      this.roundCounterEl.textContent = `Round ${current}`;
+      this.roundCounterEl.innerHTML = `Round ${current}`;
     } else {
-      this.roundCounterEl.textContent = `Round ${current} / ${total}`;
+      this.roundCounterEl.innerHTML = `Round ${current} / ${total}`;
     }
   }
 
@@ -1691,8 +1708,12 @@ class OverlayManager {
       return;
     }
 
-    // * or / closes any overlay (except inline-time which handles * specially)
-    if ((key === '*' || key === '/') && this._mode !== 'inline-time') {
+    // * or / closes any overlay (except inline-time which handles * specially, and training which handles / for credits)
+    if (key === '*' && this._mode !== 'inline-time') {
+      this.closeOverlay();
+      return;
+    }
+    if (key === '/' && this._mode !== 'inline-time' && this._mode !== 'training' && this._mode !== 'credits') {
       this.closeOverlay();
       return;
     }
@@ -1713,6 +1734,9 @@ class OverlayManager {
       this._handleTrainingSubKey(key);
     } else if (this._mode && this._mode.startsWith('chainsaw-')) {
       this._handleChainsawKey(key);
+    } else if (this._mode === 'credits') {
+      // Any key closes credits
+      this.closeOverlay();
     }
   }
 
@@ -1898,6 +1922,10 @@ class OverlayManager {
           this.closeOverlay();
           this._dualTimerCallback();
         }
+        break;
+      case '/':
+        this._mode = 'credits';
+        this._renderCredits();
         break;
       default:
         break;
@@ -2428,6 +2456,21 @@ class OverlayManager {
     this.overlayEl.classList.add('active');
   }
 
+  _renderCredits() {
+    if (!this.overlayEl) return;
+    this.overlayEl.innerHTML =
+      `<div class="overlay-content" style="text-align:center;">` +
+        `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:3vh;">Credits</div>` +
+        `<div style="font-size:clamp(1rem,2vw,2rem);line-height:2.5;color:var(--text-label);">` +
+          `<div><span style="color:var(--accent-green);font-weight:700;">Claude Opus 4.6</span> — Coding</div>` +
+          `<div><span style="color:var(--accent-green);font-weight:700;">Reevu</span> — Everything that couldn't be done by AI</div>` +
+          `<div><span style="color:var(--accent-green);font-weight:700;">Vy</span> — Unwanted feedback</div>` +
+        `</div>` +
+        `<div style="margin-top:3vh;font-size:clamp(0.8rem,1.5vw,1.5rem);color:var(--text-muted);">Press any key to close</div>` +
+      `</div>`;
+    this.overlayEl.classList.add('active');
+  }
+
   showSchedule(schedule) {
     this._open = true;
     this._mode = 'schedule';
@@ -2518,6 +2561,7 @@ class InputHandler {
     this._enterLongPressTimer = null; // Timer for long-press detection
     this._enterHandledAsLong = false; // Whether current Enter press was handled as long-press
     this._enterDownHandled = false; // Whether Enter keydown was handled by main handler
+    this._ready = false; // Whether timer area is enlarged but not yet started
     this._timeSettingMode = false; // Whether we're in arrow-key time setting mode
     this._timeSettingField = null; // 'round-min' | 'round-sec' | 'rest-min' | 'rest-sec'
     // Dual timer support
@@ -2640,8 +2684,8 @@ class InputHandler {
         }, 800);
         break;
       case '0':
-        // Shortcut for long-press Enter (stop/cancel/reset)
-        this._handleEnterLongPress();
+        // Stop → ready state, or ready → default state
+        this._handleZeroPress();
         break;
       case 'Clear':
         // Disabled — reset is now handled via long-press Enter when idle
@@ -2780,6 +2824,7 @@ class InputHandler {
     this._timeSettingField = null;
     this.renderer.roundTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
     this.renderer.restTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
+    if (this.renderer.roundCounterEl) this.renderer.roundCounterEl.classList.remove('time-setting-active');
     if (this._dualRendererEls) {
       const rt2 = this._dualRendererEls.roundTimerEl;
       const xt2 = this._dualRendererEls.restTimerEl;
@@ -2799,9 +2844,11 @@ class InputHandler {
   _renderTimeSettingDisplay() {
     this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
     this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
+    this.renderer.updateRoundCounter(0, this.state.config.numRounds);
 
     this.renderer.roundTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
     this.renderer.restTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
+    if (this.renderer.roundCounterEl) this.renderer.roundCounterEl.classList.remove('time-setting-active');
 
     if (this._dualMode && this._dualState && this._dualRendererEls) {
       this._updateTimer2Display(this._dualRendererEls.roundTimerEl, this._dualState.config.roundDurationSec, false);
@@ -2817,7 +2864,9 @@ class InputHandler {
     else if (field === 'round-sec') this.renderer.roundTimerEl.classList.add('time-setting-seconds');
     else if (field === 'rest-min') this.renderer.restTimerEl.classList.add('time-setting-minutes');
     else if (field === 'rest-sec') this.renderer.restTimerEl.classList.add('time-setting-seconds');
-    else if (this._dualRendererEls) {
+    else if (field === 'rounds') {
+      if (this.renderer.roundCounterEl) this.renderer.roundCounterEl.classList.add('time-setting-active');
+    } else if (this._dualRendererEls) {
       const rt2 = this._dualRendererEls.roundTimerEl;
       const xt2 = this._dualRendererEls.restTimerEl;
       if (field === 't2-round-min' && rt2) rt2.classList.add('time-setting-minutes');
@@ -2836,11 +2885,13 @@ class InputHandler {
     const fieldLabels = this._dualMode ? {
       'round-min': 'T1 Round Min', 'round-sec': 'T1 Round Sec',
       'rest-min': 'T1 Rest Min', 'rest-sec': 'T1 Rest Sec',
+      'rounds': 'Rounds',
       't2-round-min': 'T2 Round Min', 't2-round-sec': 'T2 Round Sec',
       't2-rest-min': 'T2 Rest Min', 't2-rest-sec': 'T2 Rest Sec'
     } : {
       'round-min': 'Round Minutes', 'round-sec': 'Round Seconds',
-      'rest-min': 'Rest Minutes', 'rest-sec': 'Rest Seconds'
+      'rest-min': 'Rest Minutes', 'rest-sec': 'Rest Seconds',
+      'rounds': 'Rounds'
     };
     const label = fieldLabels[this._timeSettingField] || '';
     bar.innerHTML =
@@ -2881,12 +2932,14 @@ class InputHandler {
     }
     if (key === 'ArrowDown') {
       const nav = { 'round-min': 'rest-min', 'round-sec': 'rest-sec',
+        'rest-min': 'rounds', 'rest-sec': 'rounds',
         't2-round-min': 't2-rest-min', 't2-round-sec': 't2-rest-sec' };
       this._timeSettingField = nav[field] || field;
       this._renderTimeSettingDisplay(); this._updateTimeSettingBar(); return;
     }
     if (key === 'ArrowUp') {
       const nav = { 'rest-min': 'round-min', 'rest-sec': 'round-sec',
+        'rounds': 'rest-min',
         't2-rest-min': 't2-round-min', 't2-rest-sec': 't2-round-sec' };
       this._timeSettingField = nav[field] || field;
       this._renderTimeSettingDisplay(); this._updateTimeSettingBar(); return;
@@ -2909,8 +2962,9 @@ class InputHandler {
         if (this.state.config.roundDurationSec === 0) {
           this.audioManager.playMuffle();
         } else {
-          this.engine.start();
-          if (this._dualMode && this._dualEngine) this._dualEngine.start();
+          // Go to ready state (enlarged) instead of starting immediately
+          this._ready = true;
+          document.body.classList.remove('timer-idle');
         }
       } else if (key === '*') {
         this.overlayManager.showTrainingMenu({ ...this.state.config }, (updatedConfig) => {
@@ -2931,6 +2985,18 @@ class InputHandler {
    */
   _adjustTimeSettingValue(direction) {
     const field = this._timeSettingField;
+
+    // Rounds adjustment
+    if (field === 'rounds') {
+      let rounds = this.state.config.numRounds + direction;
+      if (rounds < 0) rounds = 0;
+      this.state.config.numRounds = rounds;
+      this._cancelPreset();
+      this.renderer.updateRoundCounter(0, rounds);
+      this._renderTimeSettingDisplay();
+      return;
+    }
+
     const isTimer2 = field.startsWith('t2-');
     const baseField = isTimer2 ? field.substring(3) : field;
     const isRound = baseField === 'round-min' || baseField === 'round-sec';
@@ -3026,6 +3092,46 @@ class InputHandler {
   }
 
   /**
+   * Handle key 0: stop → ready, or ready → default.
+   */
+  _handleZeroPress() {
+    if (this.overlayManager.isOpen()) return;
+
+    if (this.state.phase !== PHASES.IDLE) {
+      // Running or paused → stop but stay in ready state (enlarged)
+      if (this.state.paused) {
+        this.renderer.hidePauseOverlay();
+      }
+      this.state._cancelledByUser = true;
+      this.engine.stop();
+      if (this._dualMode && this._dualEngine) {
+        this._dualState._cancelledByUser = true;
+        this._dualEngine.stop();
+      }
+      this.audioManager.playCancel();
+      const rd = this.state.roundDurations;
+      this.renderer.updateRoundDisplay(rd ? rd[0] : this.state.config.roundDurationSec, false);
+      this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
+      this.renderer.updateRoundCounter(0, rd ? rd.length : this.state.config.numRounds);
+      // Stay in ready state
+      this._ready = true;
+      document.body.classList.remove('timer-idle');
+      if (this._dualMode && this._dualRendererEls) {
+        this._updateTimer2Display(this._dualRendererEls.roundTimerEl, this._dualState.config.roundDurationSec, false);
+        this._updateTimer2Display(this._dualRendererEls.restTimerEl, this._dualState.config.restDurationSec, false);
+      }
+    } else if (this._ready) {
+      // Ready state → go back to default (shrunk)
+      this._ready = false;
+      document.body.classList.add('timer-idle');
+      this.audioManager.playCancel();
+    } else {
+      // Already in default state → full reset (same as long-press Enter)
+      this._handleEnterLongPress();
+    }
+  }
+
+  /**
    * Short press Enter: start / pause / resume.
    */
   _handleEnterShortPress() {
@@ -3036,6 +3142,14 @@ class InputHandler {
         this.audioManager.playMuffle();
         return;
       }
+      // First Enter: enlarge timer area (ready state)
+      if (!this._ready) {
+        this._ready = true;
+        document.body.classList.remove('timer-idle');
+        return;
+      }
+      // Second Enter: start the timer
+      this._ready = false;
       this.engine.start();
       if (this._dualMode && this._dualEngine) this._dualEngine.start();
     } else if (this.state.paused) {
@@ -3057,6 +3171,9 @@ class InputHandler {
   _handleEnterLongPress() {
     if (this.overlayManager.isOpen()) return;
     if (this.state.phase === PHASES.IDLE) {
+      // Reset ready state
+      this._ready = false;
+      document.body.classList.add('timer-idle');
       // Same as Clear/Reset — also deactivate dual mode
       this._deactivateDualMode();
       this.state.roundDurations = null;
@@ -3743,6 +3860,9 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         classProgress.setActiveClass(activeClass);
 
         if (activeClass) {
+          if (!hadActiveClass && APP_SETTINGS.audio.classStartSound) {
+            audioManager.playStartOfClassRing();
+          }
           hadActiveClass = true;
           if (state.phase === PHASES.IDLE) {
             // Open Mat: use Blue Belt competition preset and auto-start
@@ -3783,7 +3903,9 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
           }
         } else {
           if (hadActiveClass) {
-            audioManager.playEndOfClassRing();
+            if (APP_SETTINGS.audio.classEndSound) {
+              audioManager.playEndOfClassRing();
+            }
             hadActiveClass = false;
           }
           pendingClassType = null;

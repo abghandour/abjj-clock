@@ -343,6 +343,14 @@
       font-size: clamp(0.8rem, 1.8vw, 2rem);
       color: var(--text-muted);
       margin-top: 1vh;
+      padding: 6px 10px;
+      border: 2px solid transparent;
+      border-radius: 0.3em;
+    }
+
+    #round-counter.time-setting-active {
+      border-color: var(--text-muted);
+      animation: blink 0.7s ease-in-out infinite;
     }
 
     /* Prep countdown overlay */
