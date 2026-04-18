@@ -2459,7 +2459,7 @@ class OverlayManager {
       `<div class="advanced-menu overlay-content">` +
         `<div class="menu-title">Training Presets</div>` +
         `<div class="menu-grid">${rows}</div>` +
-        `<div class="menu-close"><span class="menu-key">*</span> ${_arrow} Close</div>` +
+        `<div class="menu-close"><span class="menu-key">*</span> ${_arrow} Close <span style="margin-left:2em;"><span class="menu-key">/</span> ${_arrow} Credits</span></div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
   }
