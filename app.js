@@ -759,23 +759,14 @@ class Renderer {
       const secs = String(remainingSec % 60).padStart(2, '0');
       this.roundTimerEl.innerHTML =
         `<span class="ts-minutes">${mins}</span>:<span class="ts-seconds">${secs}</span>`;
-    }
-    if (this.roundLabelEl) {
-      this.roundLabelEl.style.opacity = isActive ? '1' : '0.5';
-    }
-    if (this.roundTimerEl) {
-      this.roundTimerEl.style.opacity = isActive ? '1' : '0.4';
-    }
-    if (this.roundSectionEl) {
-      this.roundSectionEl.classList.toggle('active', isActive);
-      const spans = this.roundTimerEl ? this.roundTimerEl.querySelectorAll('.ts-minutes, .ts-seconds') : [];
+      this.roundTimerEl.classList.toggle('timer-active', isActive);
+      if (!isActive) this.roundTimerEl.classList.remove('timer-paused');
+      const spans = this.roundTimerEl.querySelectorAll('.ts-minutes, .ts-seconds');
       if (isActive && remainingSec <= 10) {
         this.roundTimerEl.style.backgroundColor = 'var(--accent-yellow)';
-        this.roundTimerEl.style.borderColor = 'var(--accent-yellow)';
         spans.forEach(s => s.style.borderColor = 'var(--accent-yellow)');
       } else {
         this.roundTimerEl.style.backgroundColor = '';
-        this.roundTimerEl.style.borderColor = '';
         spans.forEach(s => s.style.borderColor = '');
       }
     }
@@ -792,15 +783,8 @@ class Renderer {
       const secs = String(remainingSec % 60).padStart(2, '0');
       this.restTimerEl.innerHTML =
         `<span class="ts-minutes">${mins}</span>:<span class="ts-seconds">${secs}</span>`;
-    }
-    if (this.restLabelEl) {
-      this.restLabelEl.style.opacity = isActive ? '1' : '0.5';
-    }
-    if (this.restTimerEl) {
-      this.restTimerEl.style.opacity = isActive ? '1' : '0.4';
-    }
-    if (this.restSectionEl) {
-      this.restSectionEl.classList.toggle('active', isActive);
+      this.restTimerEl.classList.toggle('timer-active', isActive);
+      if (!isActive) this.restTimerEl.classList.remove('timer-paused');
     }
   }
 
@@ -886,14 +870,38 @@ class Renderer {
    * Show the translucent pause overlay with pause icon.
    */
   showPauseOverlay() {
-    if (this.pauseOverlayEl) this.pauseOverlayEl.classList.add('active');
+    // Switch active borders to gray for paused state
+    if (this.roundTimerEl) {
+      if (this.roundTimerEl.classList.contains('timer-active')) {
+        this.roundTimerEl.classList.remove('timer-active');
+        this.roundTimerEl.classList.add('timer-paused');
+      }
+    }
+    if (this.restTimerEl) {
+      if (this.restTimerEl.classList.contains('timer-active')) {
+        this.restTimerEl.classList.remove('timer-active');
+        this.restTimerEl.classList.add('timer-paused');
+      }
+    }
   }
 
   /**
    * Hide the pause overlay.
    */
   hidePauseOverlay() {
-    if (this.pauseOverlayEl) this.pauseOverlayEl.classList.remove('active');
+    // Switch paused borders back to active white
+    if (this.roundTimerEl) {
+      if (this.roundTimerEl.classList.contains('timer-paused')) {
+        this.roundTimerEl.classList.remove('timer-paused');
+        this.roundTimerEl.classList.add('timer-active');
+      }
+    }
+    if (this.restTimerEl) {
+      if (this.restTimerEl.classList.contains('timer-paused')) {
+        this.restTimerEl.classList.remove('timer-paused');
+        this.restTimerEl.classList.add('timer-active');
+      }
+    }
   }
 
   /**
@@ -2460,6 +2468,9 @@ class OverlayManager {
     if (!this.overlayEl) return;
     this.overlayEl.innerHTML =
       `<div class="overlay-content" style="text-align:center;">` +
+        `<div style="margin-bottom:2vh;">` +
+          `<img src="paco.avif" alt="Paco" style="width:clamp(6rem,15vw,12rem);height:clamp(6rem,15vw,12rem);border-radius:50%;object-fit:cover;border:3px solid rgba(255,255,255,0.2);">` +
+        `</div>` +
         `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:3vh;">Credits</div>` +
         `<div style="font-size:clamp(1rem,2vw,2rem);line-height:2.5;color:var(--text-label);">` +
           `<div><span style="color:var(--accent-green);font-weight:700;">Claude Opus 4.6</span> — Coding</div>` +
@@ -2800,7 +2811,6 @@ class InputHandler {
     const mins = String(Math.floor(remainingSec / 60)).padStart(2, '0');
     const secs = String(remainingSec % 60).padStart(2, '0');
     el.innerHTML = `<span class="ts-minutes">${mins}</span>:<span class="ts-seconds">${secs}</span>`;
-    el.style.opacity = isActive ? '1' : '0.4';
   }
 
   /**
@@ -3092,6 +3102,26 @@ class InputHandler {
   }
 
   /**
+   * Immediately refresh the timer display to reflect current phase.
+   */
+  _refreshTimerDisplay() {
+    const s = this.state;
+    if (s.phase === PHASES.ROUND) {
+      this.renderer.updateRoundDisplay(s.remainingSec, true);
+      const restSec = s.restDurations
+        ? s.restDurations[(s.currentRound - 1) % s.restDurations.length]
+        : s.config.restDurationSec;
+      this.renderer.updateRestDisplay(restSec, false);
+    } else if (s.phase === PHASES.REST) {
+      const roundSec = s.roundDurations
+        ? s.roundDurations[s.currentRound % s.roundDurations.length]
+        : s.config.roundDurationSec;
+      this.renderer.updateRoundDisplay(roundSec, false);
+      this.renderer.updateRestDisplay(s.remainingSec, true);
+    }
+  }
+
+  /**
    * Handle key 0: stop → ready, or ready → default.
    */
   _handleZeroPress() {
@@ -3152,10 +3182,12 @@ class InputHandler {
       this._ready = false;
       this.engine.start();
       if (this._dualMode && this._dualEngine) this._dualEngine.start();
+      this._refreshTimerDisplay();
     } else if (this.state.paused) {
       this.engine.resume();
       if (this._dualMode && this._dualEngine) this._dualEngine.resume();
       this.renderer.hidePauseOverlay();
+      this._refreshTimerDisplay();
       this.audioManager.playMuffle();
     } else {
       this.engine.pause();
@@ -3711,6 +3743,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     // 4. Pending class type for deferred preset loading (Req 19.3, 19.4)
     let pendingClassType = null;
     let hadActiveClass = false; // Track for end-of-class ring
+    let _inputHandlerRef = null; // Set after InputHandler is created
 
     // 5. Create TimerEngine with tick and phase-change callbacks
     const engine = new TimerEngine(state,
@@ -3750,10 +3783,8 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         if (oldPhase === PHASES.IDLE && newPhase === PHASES.PREP) {
           renderer.hideRoundsOver();
         }
-        // "Rounds Over" announcement when last round ends naturally (ROUND → IDLE via stop())
+        // "Rounds Over" — go to ready state (enlarged) instead of showing overlay
         if (newPhase === PHASES.IDLE && oldPhase === PHASES.ROUND && !s._cancelledByUser) {
-          const msg = s._quickTimerRestore ? "Time's Up" : 'Rounds Over';
-          renderer.showRoundsOver(msg);
           const rd = s.roundDurations;
           renderer.updateRoundDisplay(rd ? rd[0] : s.config.roundDurationSec, false);
           renderer.updateRestDisplay(s.config.restDurationSec, false);
@@ -3804,7 +3835,13 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         // Update Start/Stop label and idle state
         renderer.updateStartStopLabel(newPhase !== PHASES.IDLE);
         // Toggle idle class for layout animation
-        document.body.classList.toggle('timer-idle', newPhase === PHASES.IDLE && !state.paused);
+        // Stay enlarged (ready state) when rounds end naturally
+        if (newPhase === PHASES.IDLE && oldPhase === PHASES.ROUND && !state._cancelledByUser) {
+          document.body.classList.remove('timer-idle');
+          if (_inputHandlerRef) _inputHandlerRef._ready = true;
+        } else {
+          document.body.classList.toggle('timer-idle', newPhase === PHASES.IDLE && !state.paused);
+        }
       }
     );
 
@@ -3841,6 +3878,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     // 7. Create overlay and input handler
     const overlayManager = new OverlayManager();
     const inputHandler = new InputHandler(engine, overlayManager, renderer, audioManager, state);
+    _inputHandlerRef = inputHandler;
 
     // 8. Create ScheduleManager with automatic preset loading (Req 19.1–19.4)
     const scheduleManager = new ScheduleManager(

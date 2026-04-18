@@ -17,7 +17,7 @@
       --bg-secondary: #000000;
       --bg-overlay: rgba(0, 0, 0, 0.85);
       --text-primary: #ffffff;
-      --text-round: #00cc44;
+      --text-round: #16893c;
       --text-rest: #ff4444;
       --text-clock: #aaaacc;
       --text-muted: #9999bb;
@@ -25,7 +25,7 @@
       --text-help: #8888aa;
       --accent-green: #00cc44;
       --accent-red: #ff4444;
-      --accent-yellow: #ffcc00;
+      --accent-yellow: #d1ce18;
     }
 
     *, *::before, *::after {
@@ -125,16 +125,6 @@
       transform: scale(0.75);
     }
 
-    body.timer-idle #round-timer,
-    body.timer-idle #rest-timer {
-      opacity: 1 !important;
-    }
-
-    body.timer-idle #round-label,
-    body.timer-idle #rest-label {
-      opacity: 1 !important;
-    }
-
     #timer-area.time-setting-active {
       z-index: 999;
     }
@@ -185,7 +175,7 @@
       background: var(--text-round);
       border-radius: 0.5rem;
       padding: 2vh 1.5vw;
-      border: 2px solid var(--text-round);
+      border: 15px solid var(--text-round);
     }
 
     #round-timer.editing, #rest-timer.editing {
@@ -326,16 +316,29 @@
       background: var(--text-rest);
       border-radius: 0.5rem;
       padding: 2vh 1.5vw;
-      border: 2px solid var(--text-rest);
+      border: 15px solid var(--text-rest);
     }
 
-    /* Active timer border */
-    #round-section.active {
-      border-color: var(--text-round);
+    /* Active timer border — white when running */
+    #round-timer.timer-active {
+      border-color: #ffffff;
+      color: #ffffff !important;
     }
 
-    #rest-section.active {
-      border-color: var(--text-rest);
+    #rest-timer.timer-active {
+      border-color: #ffffff;
+      color: #ffffff !important;
+    }
+
+    /* Paused timer border — gray */
+    #round-timer.timer-paused {
+      border-color: #666666;
+      color: #666666 !important;
+    }
+
+    #rest-timer.timer-paused {
+      border-color: #666666;
+      color: #666666 !important;
     }
 
     /* Round counter */
@@ -903,7 +906,7 @@
       background: #5995f0;
       border-radius: 0.5rem;
       padding: 2vh 1.5vw;
-      border: 2px solid #5995f0;
+      border: 15px solid #5995f0;
     }
 
     #rest-timer-2 {
@@ -916,7 +919,20 @@
       background: #5995f0;
       border-radius: 0.5rem;
       padding: 2vh 1.5vw;
-      border: 2px solid #5995f0;
+      border: 15px solid #5995f0;
+    }
+
+    /* Active/paused borders and font for timer 2 */
+    #round-timer-2.timer-active,
+    #rest-timer-2.timer-active {
+      border-color: #ffffff;
+      color: #ffffff !important;
+    }
+
+    #round-timer-2.timer-paused,
+    #rest-timer-2.timer-paused {
+      border-color: #666666;
+      color: #666666 !important;
     }
 
     /* Dual mode font scaling */
@@ -984,11 +1000,6 @@
     #dual-timer-container.dual-mode #rest-section-2 .time-setting-minutes .ts-minutes,
     #dual-timer-container.dual-mode #rest-section-2 .time-setting-seconds .ts-seconds {
       border-color: #000000;
-    }
-
-    body.timer-idle #round-timer-2,
-    body.timer-idle #rest-timer-2 {
-      opacity: 1 !important;
     }
 
     /* Stealth mode hint */
