@@ -70,6 +70,9 @@
       font-family: 'DSEG7', sans-serif;
       color: white;
       font-weight: bold;
+      position: relative;
+      display: inline-block;
+      line-height: 1;
     }
 
     .clock-ampm {
@@ -79,8 +82,12 @@
     }
 
     .clock-seconds {
-      font-size: 0.5em;
-      vertical-align: baseline;
+      font-size: 0.375em;
+      position: absolute;
+      right: 0;
+      top: 0.05em;
+      transform: translateX(105%);
+      line-height: 1;
     }
 
     #day-of-week {
@@ -330,16 +337,7 @@
       color: #ffffff !important;
     }
 
-    /* Paused timer border — gray */
-    #round-timer.timer-paused {
-      border-color: #666666;
-      color: #666666 !important;
-    }
-
-    #rest-timer.timer-paused {
-      border-color: #666666;
-      color: #666666 !important;
-    }
+    /* Paused timer — handled via grayscale filter on container */
 
     /* Round counter */
     #round-counter {
@@ -454,32 +452,46 @@
       display: block;
     }
 
-    /* Help menu - bottom right */
-    #help-menu {
+    /* Status bar - bottom right */
+    #status-bar {
       position: absolute;
       bottom: 2vh;
       right: 2vh;
-      font-size: clamp(0.375rem, 0.75vw, 0.75rem);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.3em;
+      font-size: clamp(0.5rem, 1vw, 1rem);
       color: var(--text-help);
-      display: grid;
-      grid-template-columns: auto auto auto;
-      gap: 0 0.3em;
-      line-height: 1.6;
-      justify-items: start;
+      background: rgba(255,255,255,0.05);
+      padding: 0.5em 1em;
+      border-radius: 0.5em;
+      transition: opacity 0.3s ease;
+      z-index: 200;
     }
 
-    #help-menu .help-key {
+    #status-bar .sb-row {
+      display: flex;
+      align-items: center;
+      gap: 0.4em;
+    }
+
+    #status-bar .sb-key {
+      display: inline-block;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 0.25em;
+      padding: 0.1em 0;
+      font-weight: 700;
       color: var(--text-label);
-      text-align: right;
-      justify-self: end;
+      font-size: 0.9em;
+      width: 4em;
+      text-align: center;
+      letter-spacing: 0.2em;
     }
 
-    #help-menu .help-arrow {
-      color: var(--text-help);
-    }
-
-    #help-menu.timer-running .idle-only {
-      opacity: 0.2;
+    #status-bar .sb-label {
+      color: var(--text-muted);
     }
 
     /* Customization overlay */
@@ -929,12 +941,6 @@
       color: #ffffff !important;
     }
 
-    #round-timer-2.timer-paused,
-    #rest-timer-2.timer-paused {
-      border-color: #666666;
-      color: #666666 !important;
-    }
-
     /* Dual mode font scaling */
     #dual-timer-container.dual-mode #round-timer,
     #dual-timer-container.dual-mode #round-timer-2 {
@@ -1000,6 +1006,12 @@
     #dual-timer-container.dual-mode #rest-section-2 .time-setting-minutes .ts-minutes,
     #dual-timer-container.dual-mode #rest-section-2 .time-setting-seconds .ts-seconds {
       border-color: #000000;
+    }
+
+    /* Paused state — grayscale filter */
+    #dual-timer-container.timer-paused-grayscale {
+      filter: grayscale(1);
+      transition: filter 0.3s ease;
     }
 
     /* Stealth mode hint */
@@ -1080,17 +1092,8 @@
   </div>
 
   <!-- Help menu - bottom right -->
-  <div id="help-menu">
-    <span class="help-key">Enter</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span id="start-stop-label">Start</span>
-    <div style="grid-column: 1 / -1; height: 1px; background: rgba(255,255,255,0.15); margin: 0.2em 0; width: 100%; min-width: 100%;"></div>
-    <span class="help-key idle-only">▲▼◀▶</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Edit Times</span>
-    <span class="help-key idle-only">+ / −</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Adjust Value</span>
-    <div style="grid-column: 1 / -1; height: 1px; background: rgba(255,255,255,0.15); margin: 0.2em 0; width: 100%; min-width: 100%;"></div>
-    <span class="help-key idle-only">/</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Competition Presets</span>
-    <span class="help-key idle-only">*</span><span class="help-arrow idle-only"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span class="idle-only">Training Presets</span>
-    <div style="grid-column: 1 / -1; height: 1px; background: rgba(255,255,255,0.15); margin: 0.2em 0; width: 100%; min-width: 100%;"></div>
-    <span class="help-key">.</span><span class="help-arrow"><svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></span><span id="stealth-label">Stealth</span>
-  </div>
+  <!-- Status bar - bottom right -->
+  <div id="status-bar"></div>
 
   <!-- Inline edit instruction bar -->
   <div id="inline-edit-bar"></div>

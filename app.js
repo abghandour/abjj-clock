@@ -745,6 +745,7 @@ class Renderer {
     this.clockAreaEl = document.getElementById('top-right-bar');
     this.roundSectionEl = document.getElementById('round-section');
     this.presetLabelEl = document.getElementById('preset-label');
+    this.statusBarEl = document.getElementById('status-bar');
     this.stealth = false;
   }
 
@@ -800,7 +801,7 @@ class Renderer {
         const timePart = match[1].trim();
         const lastColon = timePart.lastIndexOf(':');
         const hhmm = timePart.substring(0, lastColon);
-        const ss = timePart.substring(lastColon);
+        const ss = timePart.substring(lastColon + 1);
         this.clockEl.innerHTML = `${hhmm}<span class="clock-seconds">${ss}</span> <span class="clock-ampm">${match[2]}</span>`;
       } else {
         this.clockEl.textContent = time;
@@ -870,38 +871,16 @@ class Renderer {
    * Show the translucent pause overlay with pause icon.
    */
   showPauseOverlay() {
-    // Switch active borders to gray for paused state
-    if (this.roundTimerEl) {
-      if (this.roundTimerEl.classList.contains('timer-active')) {
-        this.roundTimerEl.classList.remove('timer-active');
-        this.roundTimerEl.classList.add('timer-paused');
-      }
-    }
-    if (this.restTimerEl) {
-      if (this.restTimerEl.classList.contains('timer-active')) {
-        this.restTimerEl.classList.remove('timer-active');
-        this.restTimerEl.classList.add('timer-paused');
-      }
-    }
+    const container = document.getElementById('dual-timer-container');
+    if (container) container.classList.add('timer-paused-grayscale');
   }
 
   /**
    * Hide the pause overlay.
    */
   hidePauseOverlay() {
-    // Switch paused borders back to active white
-    if (this.roundTimerEl) {
-      if (this.roundTimerEl.classList.contains('timer-paused')) {
-        this.roundTimerEl.classList.remove('timer-paused');
-        this.roundTimerEl.classList.add('timer-active');
-      }
-    }
-    if (this.restTimerEl) {
-      if (this.restTimerEl.classList.contains('timer-paused')) {
-        this.restTimerEl.classList.remove('timer-paused');
-        this.restTimerEl.classList.add('timer-active');
-      }
-    }
+    const container = document.getElementById('dual-timer-container');
+    if (container) container.classList.remove('timer-paused-grayscale');
   }
 
   /**
@@ -974,6 +953,7 @@ class Renderer {
     if (this.nextClassDisplayEl) this.nextClassDisplayEl.style.visibility = hidden;
     const bottomLeftInfo = document.getElementById('bottom-left-info');
     if (bottomLeftInfo) bottomLeftInfo.style.visibility = hidden;
+    if (this.statusBarEl) this.statusBarEl.style.visibility = hidden;
     // Rest section: visible during REST phase even in stealth
     if (this.restSectionEl) {
       this.restSectionEl.style.visibility = (this.stealth && phase !== PHASES.REST) ? 'hidden' : '';
@@ -993,16 +973,45 @@ class Renderer {
    * @param {boolean} running - True if timer is running (not IDLE)
    */
   updateStartStopLabel(running) {
-    const enterLabel = document.getElementById('start-stop-label');
-    if (enterLabel) enterLabel.textContent = running ? 'Pause' : 'Start';
-    const helpMenu = document.getElementById('help-menu');
-    if (helpMenu) {
-      if (running) {
-        helpMenu.classList.add('timer-running');
-      } else {
-        helpMenu.classList.remove('timer-running');
-      }
+    // Legacy — now handled by updateStatusBar
+  }
+
+  /**
+   * Update the context-aware status bar based on current app state.
+   * @param {'clock'|'ready'|'running'|'paused'|'editing'} mode
+   */
+  updateStatusBar(mode) {
+    if (!this.statusBarEl) return;
+    const row = (label, key) => `<div class="sb-row"><span class="sb-label">${label}</span><span class="sb-key">${key}</span></div>`;
+
+    let html = '';
+    switch (mode) {
+      case 'clock':
+        html = row('Ready', 'Enter') + row('Edit', '▲▼') + row('Compete', '/') + row('Train', '*') + row('Stealth', '.');
+        break;
+      case 'ready':
+        html = row('Go', 'Enter') + row('Back', '0') + row('Edit', '▲▼') + row('Compete', '/') + row('Train', '*');
+        break;
+      case 'running':
+        html = row('Pause', 'Enter') + row('Stop', '0');
+        break;
+      case 'paused':
+        html = row('Resume', 'Enter') + row('Stop', '0');
+        break;
+      case 'editing':
+        html = row('Adjust', '+−') + row('Switch', '▲▼') + row('Navigate', '◀▶') + row('Go', 'Enter') + row('Done', '0');
+        break;
+      case 'training':
+        html = row('Close', '*') + row('Credits', '/');
+        break;
+      case 'competition':
+        html = row('Close', '/');
+        break;
+      case 'hidden':
+        html = '';
+        break;
     }
+    this.statusBarEl.innerHTML = html;
   }
 
   /**
@@ -1403,20 +1412,19 @@ class ClassProgressRenderer {
           else if (elapsedFraction >= 0.5) fillColor = '#ffcc00';
           else fillColor = '#00ff88';
 
-          // Fade in slices based on animation progress (1.0 = hidden, 0.0 = fully visible)
           const sliceOpacity = 1.0 - this._logoScale;
-
           ctx.globalAlpha = sliceOpacity;
-          for (let i = slicesGone; i < totalSlices; i++) {
-            const a1 = startAngle + i * sliceAngle;
-            const a2 = a1 + sliceAngle - 0.02;
-            ctx.beginPath();
-            ctx.moveTo(cx, cy);
-            ctx.arc(cx, cy, radius, a1, a2);
-            ctx.closePath();
-            ctx.fillStyle = fillColor;
-            ctx.fill();
-          }
+
+          // Draw one continuous arc for all remaining time (no gaps)
+          const arcStart = startAngle + slicesGone * sliceAngle;
+          const arcEnd = startAngle + totalSlices * sliceAngle;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.arc(cx, cy, radius, arcStart, arcEnd);
+          ctx.closePath();
+          ctx.fillStyle = fillColor;
+          ctx.fill();
+
           ctx.globalAlpha = 1.0;
         }
       }
@@ -1717,11 +1725,11 @@ class OverlayManager {
     }
 
     // * or / closes any overlay (except inline-time which handles * specially, and training which handles / for credits)
-    if (key === '*' && this._mode !== 'inline-time') {
+    if (key === '*' && this._mode !== 'inline-time' && this._mode !== 'credits' && this._mode !== 'updating' && this._mode !== 'update-error' && this._mode !== 'confirm-update') {
       this.closeOverlay();
       return;
     }
-    if (key === '/' && this._mode !== 'inline-time' && this._mode !== 'training' && this._mode !== 'credits') {
+    if (key === '/' && this._mode !== 'inline-time' && this._mode !== 'training' && this._mode !== 'credits' && this._mode !== 'updating' && this._mode !== 'update-error' && this._mode !== 'confirm-update') {
       this.closeOverlay();
       return;
     }
@@ -1743,8 +1751,32 @@ class OverlayManager {
     } else if (this._mode && this._mode.startsWith('chainsaw-')) {
       this._handleChainsawKey(key);
     } else if (this._mode === 'credits') {
-      // Any key closes credits
-      this.closeOverlay();
+      if (key === '*') {
+        this._creditsStarCount = (this._creditsStarCount || 0) + 1;
+        if (this._creditsStarCount >= 2) {
+          this._creditsStarCount = 0;
+          this._mode = 'confirm-update';
+          this._renderConfirmUpdate();
+        }
+      } else {
+        this._creditsStarCount = 0;
+        this.closeOverlay();
+      }
+    } else if (this._mode === 'confirm-update') {
+      if (key === '1') {
+        this._performUpdate('/update', 'Downloading latest code from Git');
+      } else if (key === '2') {
+        this._performUpdate('/sync-schedule', 'Syncing class schedule');
+      } else {
+        this._mode = 'credits';
+        this._renderCredits();
+      }
+    } else if (this._mode === 'updating') {
+      // Ignore keys while updating
+    } else if (this._mode === 'update-error') {
+      // Any key goes back to credits
+      this._mode = 'credits';
+      this._renderCredits();
     }
   }
 
@@ -2412,7 +2444,7 @@ class OverlayManager {
       `<div class="advanced-menu overlay-content">` +
         `<div class="menu-title">Competition Presets</div>` +
         `<div class="menu-grid-5">${rows}</div>` +
-        `<div class="menu-close"><span class="menu-key">/</span> ${_arrow} Close</div>` +
+        `<div class="menu-close"></div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
   }
@@ -2459,27 +2491,105 @@ class OverlayManager {
       `<div class="advanced-menu overlay-content">` +
         `<div class="menu-title">Training Presets</div>` +
         `<div class="menu-grid">${rows}</div>` +
-        `<div class="menu-close"><span class="menu-key">*</span> ${_arrow} Close <span style="margin-left:2em;"><span class="menu-key">/</span> ${_arrow} Credits</span></div>` +
+        `<div class="menu-close"></div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
   }
 
   _renderCredits() {
     if (!this.overlayEl) return;
+    this._creditsStarCount = 0;
     this.overlayEl.innerHTML =
       `<div class="overlay-content" style="text-align:center;">` +
         `<div style="margin-bottom:2vh;">` +
           `<img src="paco.avif" alt="Paco" style="width:clamp(6rem,15vw,12rem);height:clamp(6rem,15vw,12rem);border-radius:50%;object-fit:cover;border:3px solid rgba(255,255,255,0.2);">` +
         `</div>` +
         `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:3vh;">Credits</div>` +
-        `<div style="font-size:clamp(1rem,2vw,2rem);line-height:2.5;color:var(--text-label);">` +
-          `<div><span style="color:var(--accent-green);font-weight:700;">Claude Opus 4.6</span> — Coding</div>` +
-          `<div><span style="color:var(--accent-green);font-weight:700;">Reevu</span> — Everything that couldn't be done by AI</div>` +
-          `<div><span style="color:var(--accent-green);font-weight:700;">Vy</span> — Unwanted feedback</div>` +
+        `<div style="font-size:clamp(1rem,2vw,2rem);color:var(--text-label);display:grid;grid-template-columns:auto 1fr;gap:0.8vh 1.5vw;text-align:left;">` +
+          `<span style="color:var(--accent-green);font-weight:700;">Claude</span><span>Code</span>` +
+          `<span style="color:var(--accent-green);font-weight:700;">Reevu</span><span>The hard parts</span>` +
+          `<span style="color:var(--accent-green);font-weight:700;">Vy</span><span>Innovation and free metrostar swag</span>` +
         `</div>` +
         `<div style="margin-top:3vh;font-size:clamp(0.8rem,1.5vw,1.5rem);color:var(--text-muted);">Press any key to close</div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
+  }
+
+  _renderConfirmUpdate() {
+    if (!this.overlayEl) return;
+    this.overlayEl.innerHTML =
+      `<div class="overlay-content" style="text-align:center;">` +
+        `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:3vh;">System Update</div>` +
+        `<div style="font-size:clamp(1rem,2vw,2rem);display:grid;grid-template-columns:auto 1fr;gap:1vh 1.5vw;text-align:left;margin-bottom:3vh;">` +
+          `<span style="color:var(--accent-green);font-weight:700;">1</span><span style="color:var(--text-label);">Download latest code from Git</span>` +
+          `<span style="color:var(--accent-green);font-weight:700;">2</span><span style="color:var(--text-label);">Sync class schedule</span>` +
+        `</div>` +
+        `<div style="font-size:clamp(0.8rem,1.5vw,1.5rem);color:var(--text-muted);">Any other key to cancel</div>` +
+      `</div>`;
+    this.overlayEl.classList.add('active');
+  }
+
+  /**
+   * Trigger a server action (git pull or sync schedule).
+   * @param {string} endpoint - '/update' or '/sync-schedule'
+   * @param {string} description - Display text for the progress screen
+   */
+  _performUpdate(endpoint, description) {
+    if (!navigator.onLine) {
+      this._showUpdateError('No WiFi — check your network connection');
+      return;
+    }
+
+    this._mode = 'updating';
+    if (!this.overlayEl) return;
+    this.overlayEl.innerHTML =
+      `<div class="overlay-content" style="text-align:center;">` +
+        `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:3vh;">Updating...</div>` +
+        `<div style="font-size:clamp(1rem,2vw,2rem);color:var(--text-muted);">${description}</div>` +
+        `<div style="margin-top:3vh;">` +
+          `<div style="width:clamp(10rem,30vw,20rem);height:4px;background:rgba(255,255,255,0.1);border-radius:2px;margin:0 auto;overflow:hidden;">` +
+            `<div style="width:100%;height:100%;background:var(--accent-green);border-radius:2px;animation:progress-bar 2s ease-in-out infinite;"></div>` +
+          `</div>` +
+        `</div>` +
+      `</div>`;
+
+    // Add progress bar animation
+    if (!document.getElementById('update-progress-style')) {
+      const style = document.createElement('style');
+      style.id = 'update-progress-style';
+      style.textContent = `@keyframes progress-bar { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }`;
+      document.head.appendChild(style);
+    }
+
+    fetch(`http://localhost:3001${endpoint}`, { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          this.overlayEl.innerHTML =
+            `<div class="overlay-content" style="text-align:center;">` +
+              `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--accent-green);margin-bottom:2vh;">✓ Updated</div>` +
+              `<div style="font-size:clamp(1rem,2vw,2rem);color:var(--text-muted);">${data.output || 'Success'}</div>` +
+              `<div style="margin-top:2vh;font-size:clamp(1rem,2vw,2rem);color:var(--text-label);">Reloading...</div>` +
+            `</div>`;
+          setTimeout(() => window.location.reload(), 1500);
+        } else {
+          this._showUpdateError(data.error || 'Unknown error');
+        }
+      })
+      .catch(err => {
+        this._showUpdateError(err.message || 'Connection failed');
+      });
+  }
+
+  _showUpdateError(message) {
+    this._mode = 'update-error';
+    if (!this.overlayEl) return;
+    this.overlayEl.innerHTML =
+      `<div class="overlay-content" style="text-align:center;">` +
+        `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--accent-red);margin-bottom:2vh;">Update Failed</div>` +
+        `<div style="font-size:clamp(0.9rem,1.8vw,1.8rem);color:var(--text-muted);max-width:60vw;word-break:break-word;">${message}</div>` +
+        `<div style="margin-top:3vh;font-size:clamp(0.8rem,1.5vw,1.5rem);color:var(--text-muted);">Press any key to go back</div>` +
+      `</div>`;
   }
 
   showSchedule(schedule) {
@@ -2706,10 +2816,12 @@ class InputHandler {
         if (this.state.phase !== PHASES.IDLE) break;
         if (this.overlayManager.isOpen()) {
           this.overlayManager.closeOverlay();
+          this.renderer.updateStatusBar(this._ready ? 'ready' : 'clock');
         } else {
           this.overlayManager.showCompetitionMenu({ ...this.state.config }, (updatedConfig) => {
             this._applyMenuConfig(updatedConfig);
           });
+          this.renderer.updateStatusBar('competition');
         }
         break;
       case '*':
@@ -2717,10 +2829,12 @@ class InputHandler {
         if (this.state.phase !== PHASES.IDLE) break;
         if (this.overlayManager.isOpen()) {
           this.overlayManager.closeOverlay();
+          this.renderer.updateStatusBar(this._ready ? 'ready' : 'clock');
         } else {
           this.overlayManager.showTrainingMenu({ ...this.state.config }, (updatedConfig) => {
             this._applyMenuConfig(updatedConfig);
           });
+          this.renderer.updateStatusBar('training');
         }
         break;
       default:
@@ -2824,6 +2938,7 @@ class InputHandler {
     document.body.classList.add('time-setting');
     this._renderTimeSettingDisplay();
     this._updateTimeSettingBar();
+    this.renderer.updateStatusBar('editing');
   }
 
   /**
@@ -2846,6 +2961,7 @@ class InputHandler {
     document.body.classList.remove('time-setting');
     const bar = document.getElementById('edit-instruction-bar');
     if (bar) { bar.classList.remove('active'); bar.innerHTML = ''; }
+    this.renderer.updateStatusBar(this._ready ? 'ready' : 'clock');
   }
 
   /**
@@ -2980,10 +3096,12 @@ class InputHandler {
         this.overlayManager.showTrainingMenu({ ...this.state.config }, (updatedConfig) => {
           this._applyMenuConfig(updatedConfig);
         });
+        this.renderer.updateStatusBar('training');
       } else if (key === '/') {
         this.overlayManager.showCompetitionMenu({ ...this.state.config }, (updatedConfig) => {
           this._applyMenuConfig(updatedConfig);
         });
+        this.renderer.updateStatusBar('competition');
       }
       return;
     }
@@ -3067,6 +3185,7 @@ class InputHandler {
         this.renderer.hideRoundList();
       }
     }
+    this.renderer.updateStatusBar(this._ready ? 'ready' : 'clock');
   }
   _cancelPreset() {
     this.state._presetName = null;
@@ -3143,9 +3262,9 @@ class InputHandler {
       this.renderer.updateRoundDisplay(rd ? rd[0] : this.state.config.roundDurationSec, false);
       this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
       this.renderer.updateRoundCounter(0, rd ? rd.length : this.state.config.numRounds);
-      // Stay in ready state
       this._ready = true;
       document.body.classList.remove('timer-idle');
+      this.renderer.updateStatusBar('ready');
       if (this._dualMode && this._dualRendererEls) {
         this._updateTimer2Display(this._dualRendererEls.roundTimerEl, this._dualState.config.roundDurationSec, false);
         this._updateTimer2Display(this._dualRendererEls.restTimerEl, this._dualState.config.restDurationSec, false);
@@ -3154,6 +3273,7 @@ class InputHandler {
       // Ready state → go back to default (shrunk)
       this._ready = false;
       document.body.classList.add('timer-idle');
+      this.renderer.updateStatusBar('clock');
       this.audioManager.playCancel();
     } else {
       // Already in default state → full reset (same as long-press Enter)
@@ -3176,6 +3296,7 @@ class InputHandler {
       if (!this._ready) {
         this._ready = true;
         document.body.classList.remove('timer-idle');
+        this.renderer.updateStatusBar('ready');
         return;
       }
       // Second Enter: start the timer
@@ -3183,16 +3304,19 @@ class InputHandler {
       this.engine.start();
       if (this._dualMode && this._dualEngine) this._dualEngine.start();
       this._refreshTimerDisplay();
+      this.renderer.updateStatusBar('running');
     } else if (this.state.paused) {
       this.engine.resume();
       if (this._dualMode && this._dualEngine) this._dualEngine.resume();
       this.renderer.hidePauseOverlay();
       this._refreshTimerDisplay();
+      this.renderer.updateStatusBar('running');
       this.audioManager.playMuffle();
     } else {
       this.engine.pause();
       if (this._dualMode && this._dualEngine) this._dualEngine.pause();
       this.renderer.showPauseOverlay();
+      this.renderer.updateStatusBar('paused');
       this.audioManager.playMuffle();
     }
   }
@@ -3206,6 +3330,7 @@ class InputHandler {
       // Reset ready state
       this._ready = false;
       document.body.classList.add('timer-idle');
+      this.renderer.updateStatusBar('clock');
       // Same as Clear/Reset — also deactivate dual mode
       this._deactivateDualMode();
       this.state.roundDurations = null;
@@ -3832,8 +3957,16 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
             renderer.hideRoundList();
           }
         }
-        // Update Start/Stop label and idle state
-        renderer.updateStartStopLabel(newPhase !== PHASES.IDLE);
+        // Update status bar based on new phase
+        if (newPhase === PHASES.IDLE) {
+          if (_inputHandlerRef && _inputHandlerRef._ready) {
+            renderer.updateStatusBar('ready');
+          } else {
+            renderer.updateStatusBar('clock');
+          }
+        } else {
+          renderer.updateStatusBar(state.paused ? 'paused' : 'running');
+        }
         // Toggle idle class for layout animation
         // Stay enlarged (ready state) when rounds end naturally
         if (newPhase === PHASES.IDLE && oldPhase === PHASES.ROUND && !state._cancelledByUser) {
@@ -3995,6 +4128,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     renderer.updateRestDisplay(state.config.restDurationSec, false);
     renderer.updateRoundCounter(0, state.config.numRounds);
     renderer.updatePresetLabel(null);
+    renderer.updateStatusBar('clock');
 
     // 10. Load schedule from config.json and start polling
     const initSchedule = isDebug && debugScheduleEntry

@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "serve": "npx serve .",
+    "serve": "node update-server.js & npx serve .",
+    "update-server": "node update-server.js",
     "test": "vitest --run"
   },
   "keywords": [],
