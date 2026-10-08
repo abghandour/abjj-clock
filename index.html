@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BJJ Timer</title>
+  <link rel="preload" href="fonts/DSEG7Classic-Bold.woff2" as="font" type="font/woff2" crossorigin>
   <style>
     @font-face {
       font-family: 'DSEG7';
@@ -57,8 +58,9 @@
       top: 2vh;
       right: 2vh;
       display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 1.5vw;
+      gap: 0.5vh;
       font-size: clamp(1rem, 2.5vw, 3rem);
       color: var(--text-clock);
       font-variant-numeric: tabular-nums;
@@ -91,10 +93,6 @@
     }
 
     #day-of-week {
-      display: none;
-    }
-
-    #temperature {
       display: none;
     }
 
@@ -194,6 +192,12 @@
       50%, 100% { opacity: 0.7; }
     }
 
+    /* Time-setting blink: digits and border alternate black → white */
+    @keyframes blink-bw {
+      0%, 49% { color: #000000; border-color: #000000; }
+      50%, 100% { color: #ffffff; border-color: #ffffff; }
+    }
+
     /* Time-setting mode: digit group base styles to prevent layout shift */
     .ts-minutes, .ts-seconds {
       padding: 10px 6px;
@@ -214,48 +218,18 @@
       border-color: var(--text-rest);
     }
 
-    /* Time-setting mode: black border only on the active digit group, blink it */
+    /* Time-setting mode: black border only on the active digit group,
+       blinking black → white (digits and border together) */
     #round-section .time-setting-minutes .ts-minutes,
     #round-section .time-setting-seconds .ts-seconds,
     #rest-section .time-setting-minutes .ts-minutes,
     #rest-section .time-setting-seconds .ts-seconds {
       border-color: #000000;
-      animation: blink 0.7s ease-in-out infinite;
+      animation: blink-bw 1.4s step-end infinite;
     }
 
-    /* Inline edit instruction bar */
-    #inline-edit-bar {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      background: rgba(0, 0, 0, 0.9);
-      color: var(--text-primary);
-      text-align: center;
-      padding: 1.5vh 2vw;
-      font-size: clamp(1rem, 2vw, 2rem);
-      z-index: 100;
-      border-bottom: 2px solid var(--accent-green);
-    }
-
-    #inline-edit-bar.active {
-      display: block;
-    }
-
-    #inline-edit-bar .edit-hint {
-      color: var(--text-muted);
-      font-size: 0.7em;
-      margin-top: 0.5vh;
-    }
-
-    #inline-edit-bar .edit-error {
-      color: var(--accent-red);
-      font-size: 0.8em;
-      margin-top: 0.3vh;
-    }
-
-    #inline-edit-bar .key-badge {
+    /* Key badges used in instruction bars and overlays */
+    .key-badge {
       display: inline-block;
       background: rgba(255,255,255,0.15);
       border: 1px solid rgba(255,255,255,0.3);
@@ -265,7 +239,7 @@
       margin: 0 0.2em;
     }
 
-    /* Inline edit instruction bar */
+    /* Time-setting instruction bar */
     #edit-instruction-bar {
       position: fixed;
       top: 0;
@@ -293,6 +267,45 @@
     #edit-instruction-bar .edit-error {
       color: var(--accent-red);
       margin-top: 0.5em;
+    }
+
+    /* Holiday decorations layer (subtle, non-interactive, below all overlays) */
+    #holiday-layer {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 20;
+      display: none;
+    }
+
+    #holiday-layer.active {
+      display: block;
+    }
+
+    #holiday-canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Transient label shown while cycling holiday previews (Ctrl+H) */
+    #holiday-cycle-toast {
+      position: fixed;
+      bottom: 6vh;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.85);
+      color: var(--text-primary);
+      padding: 1vh 2vw;
+      border-radius: 8px;
+      font-size: clamp(0.9rem, 1.8vw, 1.8rem);
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 300;
+    }
+
+    #holiday-cycle-toast.visible {
+      opacity: 1;
     }
 
     /* Rest timer */
@@ -337,8 +350,6 @@
       color: #ffffff !important;
     }
 
-    /* Paused timer — handled via grayscale filter on container */
-
     /* Round counter */
     #round-counter {
       font-size: clamp(0.8rem, 1.8vw, 2rem);
@@ -351,7 +362,7 @@
 
     #round-counter.time-setting-active {
       border-color: var(--text-muted);
-      animation: blink 0.7s ease-in-out infinite;
+      animation: blink 1.4s ease-in-out infinite;
     }
 
     /* Prep countdown overlay */
@@ -457,7 +468,7 @@
       position: absolute;
       bottom: 2vh;
       right: 2vh;
-      display: flex;
+      display: none; /* key hints removed; element kept for display sync */
       flex-direction: column;
       align-items: flex-end;
       gap: 0.3em;
@@ -485,9 +496,12 @@
       font-weight: 700;
       color: var(--text-label);
       font-size: 0.9em;
-      width: 4em;
+      min-width: 4em;
+      padding: 0.1em 0.4em;
+      box-sizing: border-box;
       text-align: center;
-      letter-spacing: 0.2em;
+      letter-spacing: 0.1em;
+      white-space: nowrap;
     }
 
     #status-bar .sb-label {
@@ -538,12 +552,93 @@
       text-align: center;
     }
 
+    #overlay .overlay-input-dim {
+      color: var(--text-muted);
+      opacity: 0.6;
+    }
+
     #overlay .overlay-error {
       font-size: clamp(1rem, 2.5vw, 2.5rem);
       color: var(--accent-red);
       margin-top: 1vh;
       text-align: center;
       min-height: 1.5em;
+    }
+
+    /* Step-by-step prompts (training / chainsaw): a fixed box so the popup
+       does not grow or shrink as prompts, previews and errors change */
+    #overlay .overlay-wizard {
+      width: min(84vw, 64rem);
+      min-height: min(62vh, 46rem);
+      box-sizing: border-box;
+      justify-content: flex-start;
+    }
+
+    #overlay .overlay-wizard .overlay-wizard-title {
+      font-size: clamp(2rem, 5vw, 5rem);
+      color: var(--text-primary);
+      margin-bottom: 1vh;
+      white-space: nowrap;
+    }
+
+    #overlay .overlay-wizard .overlay-prompt {
+      min-height: 2.5em; /* room for a two-line prompt */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Wizard body: same height whether it holds a number or a duration box */
+    #overlay .overlay-wizard-body {
+      min-height: clamp(5rem, 16vw, 18rem);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Duration picker: the main page's round / rest box, smaller */
+    #overlay .overlay-duration {
+      font-size: clamp(2rem, 7vw, 8rem);
+      font-family: 'DSEG7', sans-serif;
+      font-weight: 700;
+      color: #000000;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      border-radius: 0.5rem;
+      padding: 1vh 1vw;
+      border: 8px solid;
+    }
+
+    #overlay .overlay-duration .ts-minutes,
+    #overlay .overlay-duration .ts-seconds {
+      padding: 6px 4px;
+      border-width: 5px;
+    }
+
+    #overlay .overlay-duration.dur-round {
+      background-color: var(--text-round);
+      border-color: var(--text-round);
+    }
+
+    #overlay .overlay-duration.dur-round .ts-minutes,
+    #overlay .overlay-duration.dur-round .ts-seconds {
+      border-color: var(--text-round);
+    }
+
+    #overlay .overlay-duration.dur-rest {
+      background-color: var(--text-rest);
+      border-color: var(--text-rest);
+    }
+
+    #overlay .overlay-duration.dur-rest .ts-minutes,
+    #overlay .overlay-duration.dur-rest .ts-seconds {
+      border-color: var(--text-rest);
+    }
+
+    #overlay .overlay-duration.time-setting-minutes .ts-minutes,
+    #overlay .overlay-duration.time-setting-seconds .ts-seconds {
+      border-color: #000000;
+      animation: blink-bw 1.4s step-end infinite;
     }
 
     #overlay .overlay-hint {
@@ -567,7 +662,7 @@
     #overlay .advanced-menu .menu-grid {
       display: grid;
       grid-template-columns: auto auto 1fr auto;
-      gap: 0.8vh 2.5vw;
+      gap: 0.4vh 0;
       align-items: center;
       font-size: clamp(1rem, 2.5vw, 2.5rem);
     }
@@ -575,7 +670,7 @@
     #overlay .advanced-menu .menu-grid-5 {
       display: grid;
       grid-template-columns: auto auto 1fr auto auto;
-      gap: 0.8vh 2.5vw;
+      gap: 0.4vh 0;
       align-items: center;
       font-size: clamp(1rem, 2.5vw, 2.5rem);
     }
@@ -603,6 +698,39 @@
     #overlay .advanced-menu .menu-grid-5 .mg-note {
       color: var(--text-muted);
       font-size: 0.75em;
+    }
+
+    /* Highlighted row (ring navigation): every cell of the row gets .mg-sel.
+       No column gap — the cells carry the spacing as padding so their
+       backgrounds join into one continuous bar. Selection changes colour only,
+       never weight, so column widths stay put while the highlight moves. */
+    #overlay .advanced-menu .menu-grid > span,
+    #overlay .advanced-menu .menu-grid-5 > span {
+      padding: 0.15em 0.75em;
+      align-self: stretch;
+      display: flex;
+      align-items: center;
+    }
+
+    #overlay .advanced-menu .menu-grid > .mg-key,
+    #overlay .advanced-menu .menu-grid-5 > .mg-key {
+      justify-content: flex-end;
+    }
+
+    #overlay .advanced-menu .mg-sel {
+      background: rgba(255, 255, 255, 0.14);
+    }
+
+    #overlay .advanced-menu .mg-key.mg-sel {
+      border-radius: 0.3em 0 0 0.3em;
+    }
+
+    #overlay .advanced-menu .mg-last.mg-sel {
+      border-radius: 0 0.3em 0.3em 0;
+    }
+
+    #overlay .advanced-menu .mg-name.mg-sel {
+      color: var(--text-primary);
     }
 
     #overlay .advanced-menu .menu-close {
@@ -646,72 +774,6 @@
     #screen-flash.active {
       display: block;
       animation: screen-flash 0.3s ease-out forwards;
-    }
-
-    /* Pause overlay */
-    #pause-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.6);
-      align-items: center;
-      justify-content: center;
-      z-index: 40;
-    }
-
-    #pause-overlay.active {
-      display: flex;
-    }
-
-    #pause-overlay .pause-icon {
-      display: flex;
-      gap: clamp(1rem, 3vw, 4rem);
-      background: rgba(20, 20, 30, 0.95);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 1rem;
-      padding: clamp(2rem, 5vw, 6rem) clamp(2.5rem, 6vw, 8rem);
-    }
-
-    #pause-overlay .pause-bar {
-      width: clamp(1.5rem, 4vw, 5rem);
-      height: clamp(6rem, 18vw, 22rem);
-      background: rgba(255, 255, 255, 0.95);
-      border-radius: 0.5rem;
-    }
-
-    #pause-overlay .pause-help {
-      position: absolute;
-      bottom: 4vh;
-      font-size: clamp(0.8rem, 1.5vw, 1.5rem);
-      color: rgba(255, 255, 255, 0.6);
-    }
-
-    #pause-overlay .pause-help-key {
-      color: rgba(255, 255, 255, 0.9);
-      font-weight: 700;
-    }
-
-    /* Rounds over announcement */
-    #rounds-over {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: var(--bg-overlay);
-      align-items: center;
-      justify-content: center;
-      z-index: 45;
-    }
-
-    #rounds-over.active {
-      display: flex;
-    }
-
-    #rounds-over .rounds-over-text {
-      font-size: clamp(3rem, 10vw, 12rem);
-      font-weight: 700;
-      color: var(--accent-green);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
     }
 
     /* Round list panel - bottom left */
@@ -997,7 +1059,7 @@
     #rest-section-2 .time-setting-minutes .ts-minutes,
     #rest-section-2 .time-setting-seconds .ts-seconds {
       border-color: #000000;
-      animation: blink 0.7s ease-in-out infinite;
+      animation: blink-bw 1.4s step-end infinite;
     }
 
     /* Time-setting border must override dual-mode rest border colors */
@@ -1012,6 +1074,96 @@
     #dual-timer-container.timer-paused-grayscale {
       filter: grayscale(1);
       transition: filter 0.3s ease;
+    }
+
+    /* --- Dual-screen display modes ---
+       The <html> element carries screen1/screen2 (which kiosk window this is)
+       plus mode-mirror / mode-clocktimer / mode-split (key 7 cycles). */
+
+    #sync-status {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 9999;
+      padding: 1rem;
+      background: #802020;
+      color: white;
+      text-align: center;
+      font-size: clamp(1rem, 2vw, 2rem);
+    }
+    .sync-stale #dual-timer-container { opacity: 0.35; }
+
+    /* Toast shown on the primary when cycling display modes (key 7) */
+    #display-mode-toast {
+      position: fixed;
+      bottom: 6vh;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.85);
+      color: var(--text-primary);
+      padding: 1vh 2vw;
+      border-radius: 8px;
+      font-size: clamp(0.9rem, 1.8vw, 1.8rem);
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 400;
+    }
+
+    #display-mode-toast.visible {
+      opacity: 1;
+    }
+
+    /* Clock + Timer: screen 2 becomes a dedicated clock/schedule display */
+    html.screen2.mode-clocktimer #timer-area,
+    html.screen2.mode-clocktimer #round-list,
+    html.screen2.mode-clocktimer #status-bar,
+    html.screen2.mode-clocktimer #edit-instruction-bar,
+    html.screen2.mode-clocktimer #overlay,
+    html.screen2.mode-clocktimer #prep-overlay,
+    html.screen2.mode-clocktimer #screen-flash {
+      display: none !important;
+    }
+
+    html.screen2.mode-clocktimer #top-center-bar {
+      position: fixed;
+      top: 40%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: clamp(5rem, 22vw, 26rem);
+    }
+
+    /* Split Timers: each screen shows one dual-mode timer panel fullscreen */
+    html.mode-split.screen1 #timer-panel-2,
+    html.mode-split.screen2 #timer-panel-1,
+    html.mode-split.screen2 #status-bar {
+      display: none !important;
+    }
+
+    html.mode-split #dual-timer-container.dual-mode {
+      gap: 0;
+    }
+
+    html.mode-split #dual-timer-container.dual-mode .timer-panel {
+      flex: none;
+      max-width: 100%;
+    }
+
+    html.mode-split #dual-timer-container.dual-mode #round-timer,
+    html.mode-split #dual-timer-container.dual-mode #round-timer-2 {
+      font-size: clamp(4rem, 18vw, 20rem);
+    }
+
+    html.mode-split #dual-timer-container.dual-mode #rest-timer,
+    html.mode-split #dual-timer-container.dual-mode #rest-timer-2 {
+      font-size: clamp(2.5rem, 10vw, 12rem);
+    }
+
+    /* Split timers render full-size, so shrink them as much as the single
+       timer when idle — the 0.75 dual scale would collide with the big clock */
+    html.mode-split body.timer-idle #timer-area.dual-timer-active {
+      transform: scale(0.54);
     }
 
     /* Stealth mode hint */
@@ -1029,12 +1181,13 @@
   </style>
 </head>
 <body>
+  <div id="sync-status" role="status" hidden>Primary display disconnected — timer may be out of date</div>
 
   <!-- Top right bar -->
   <div id="top-right-bar">
-    <span id="temperature" style="display:none;"></span>
     <span id="day-of-week"></span>
     <canvas id="class-progress" width="250" height="250"></canvas>
+    <span id="temperature" style="display:none;"></span>
   </div>
 
   <!-- Main timer area - centered -->
@@ -1066,7 +1219,6 @@
           <div class="rest-label-2">Rest</div>
           <div id="rest-timer-2"><span class="ts-minutes">01</span>:<span class="ts-seconds">00</span></div>
         </div>
-        <div id="round-counter-2"></div>
       </div>
     </div>
   </div>
@@ -1091,35 +1243,24 @@
     <span id="clock">00:00:00</span>
   </div>
 
-  <!-- Help menu - bottom right -->
   <!-- Status bar - bottom right -->
   <div id="status-bar"></div>
 
-  <!-- Inline edit instruction bar -->
-  <div id="inline-edit-bar"></div>
+  <!-- Time-setting mode instruction bar -->
+  <div id="edit-instruction-bar"></div>
+
+  <!-- Holiday decorations (hidden unless enabled and a holiday is active) -->
+  <div id="holiday-layer" aria-hidden="true">
+    <canvas id="holiday-canvas"></canvas>
+  </div>
+  <div id="holiday-cycle-toast" aria-hidden="true"></div>
+  <div id="display-mode-toast" aria-hidden="true"></div>
 
   <!-- Customization / Advanced overlay -->
   <div id="overlay"></div>
 
   <!-- Screen flash effect -->
   <div id="screen-flash"></div>
-
-  <!-- Pause overlay -->
-  <div id="pause-overlay">
-    <div class="pause-icon">
-      <div class="pause-bar"></div>
-      <div class="pause-bar"></div>
-    </div>
-    <div class="pause-help">
-      <span class="pause-help-key">Enter</span> Resume
-      <span style="margin-left:1.5em;">Hold Enter for Cancel</span>
-    </div>
-  </div>
-
-  <!-- Rounds over announcement -->
-  <div id="rounds-over">
-    <div class="rounds-over-text">Rounds Over</div>
-  </div>
 
   <!-- Bottom-left info: round list + next class -->
   <div id="bottom-left-info">

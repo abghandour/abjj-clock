@@ -1,4 +1,8 @@
 {
+  "relay": {
+    "sharedKey": "1",
+    "allowedOrigins": []
+  },
   "defaults": {
     "roundDurationSec": 360,
     "restDurationSec": 60,
@@ -12,17 +16,8 @@
     "prepBeepBaseFrequency": 500,
     "prepBeepFrequencyStep": 100,
     "prepBeepDuration": 0.15,
-    "endOfRoundFrequency": 400,
-    "endOfRoundDuration": 0.5,
     "endOfRestFrequency": 600,
     "endOfRestDuration": 0.5,
-    "fanfareNotes": [
-      523,
-      659,
-      784
-    ],
-    "fanfareNoteDuration": 0.3,
-    "fanfareNoteGap": 0.12,
     "volume": 1.0
   },
   "competitionPresets": {
@@ -58,9 +53,6 @@
     }
   },
   "presetOverrides": {
-    "kids": {
-      "roundDurationSec": 15
-    },
     "marathon_roll": {
       "restDurationSec": 10
     }

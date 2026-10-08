@@ -11,13 +11,14 @@ function formatTime(totalSeconds) {
 }
 
 /**
- * Converts minutes and seconds to total seconds.
- * @param {number} minutes - Number of minutes
- * @param {number} seconds - Number of seconds
- * @returns {number} Total seconds
+ * True for a non-negative integer number of seconds. Rejects NaN, Infinity,
+ * negatives and fractions so corrupted storage can never produce a timer that
+ * fails to count down.
+ * @param {*} value
+ * @returns {boolean}
  */
-function parseTimeInput(minutes, seconds) {
-  return (minutes * 60) + seconds;
+function isValidSeconds(value) {
+  return Number.isInteger(value) && value >= 0 && value <= 5999;
 }
 
 /**
@@ -27,6 +28,18 @@ function parseTimeInput(minutes, seconds) {
  */
 function isNumeric(str) {
   return /^\d+$/.test(str);
+}
+
+/**
+ * Escapes HTML special characters so untrusted text (schedule titles,
+ * server output, config values) can be safely interpolated into innerHTML.
+ * @param {*} value - Value to escape (coerced to string)
+ * @returns {string} HTML-safe string
+ */
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
 }
 
 /**
@@ -95,9 +108,16 @@ const DEFAULT_CONFIG = {
   prepDurationSec: 0
 };
 
+// Storage can throw even when reading (e.g. disabled browser storage).
+function readStorage(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+
 // App-wide configurable settings (overridden by config.json at runtime)
 const APP_SETTINGS = {
-  scheduleEnabled: localStorage.getItem('bjj-timer-schedule-enabled') !== 'false',
+  scheduleEnabled: readStorage('bjj-timer-schedule-enabled') !== 'false',
+  holidayThemeEnabled: readStorage('bjj-timer-holiday-theme') === 'true',
+  relay: { sharedKey: '1' },
   alertThresholdSec: 5,
   audio: {
     countdownBeepFrequency: 800,
@@ -105,13 +125,8 @@ const APP_SETTINGS = {
     prepBeepBaseFrequency: 500,
     prepBeepFrequencyStep: 100,
     prepBeepDuration: 0.15,
-    endOfRoundFrequency: 400,
-    endOfRoundDuration: 0.5,
     endOfRestFrequency: 600,
     endOfRestDuration: 0.5,
-    fanfareNotes: [523, 659, 784],
-    fanfareNoteDuration: 0.3,
-    fanfareNoteGap: 0.12,
     volume: 1.0,
     classStartSound: false,
     classEndSound: false
@@ -140,14 +155,16 @@ const APP_SETTINGS = {
 function applyConfigSettings(data) {
   if (!data || typeof data !== 'object') return;
 
+  if (typeof data.relay?.sharedKey === 'string' && data.relay.sharedKey) APP_SETTINGS.relay.sharedKey = data.relay.sharedKey;
+
   // Override default timer config
   if (data.defaults && typeof data.defaults === 'object') {
     const d = data.defaults;
-    if (typeof d.roundDurationSec === 'number') DEFAULT_CONFIG.roundDurationSec = d.roundDurationSec;
-    if (typeof d.restDurationSec === 'number') DEFAULT_CONFIG.restDurationSec = d.restDurationSec;
-    if (typeof d.numRounds === 'number') DEFAULT_CONFIG.numRounds = d.numRounds;
-    if (typeof d.prepDurationSec === 'number') DEFAULT_CONFIG.prepDurationSec = d.prepDurationSec;
-    if (typeof d.alertThresholdSec === 'number') APP_SETTINGS.alertThresholdSec = d.alertThresholdSec;
+    if (isValidSeconds(d.roundDurationSec)) DEFAULT_CONFIG.roundDurationSec = d.roundDurationSec;
+    if (isValidSeconds(d.restDurationSec)) DEFAULT_CONFIG.restDurationSec = d.restDurationSec;
+    if (isValidSeconds(d.numRounds)) DEFAULT_CONFIG.numRounds = d.numRounds;
+    if (isValidSeconds(d.prepDurationSec)) DEFAULT_CONFIG.prepDurationSec = d.prepDurationSec;
+    if (isValidSeconds(d.alertThresholdSec)) APP_SETTINGS.alertThresholdSec = d.alertThresholdSec;
   }
 
   // Override audio settings
@@ -159,13 +176,8 @@ function applyConfigSettings(data) {
     if (typeof a.prepBeepBaseFrequency === 'number') s.prepBeepBaseFrequency = a.prepBeepBaseFrequency;
     if (typeof a.prepBeepFrequencyStep === 'number') s.prepBeepFrequencyStep = a.prepBeepFrequencyStep;
     if (typeof a.prepBeepDuration === 'number') s.prepBeepDuration = a.prepBeepDuration;
-    if (typeof a.endOfRoundFrequency === 'number') s.endOfRoundFrequency = a.endOfRoundFrequency;
-    if (typeof a.endOfRoundDuration === 'number') s.endOfRoundDuration = a.endOfRoundDuration;
     if (typeof a.endOfRestFrequency === 'number') s.endOfRestFrequency = a.endOfRestFrequency;
     if (typeof a.endOfRestDuration === 'number') s.endOfRestDuration = a.endOfRestDuration;
-    if (Array.isArray(a.fanfareNotes)) s.fanfareNotes = a.fanfareNotes;
-    if (typeof a.fanfareNoteDuration === 'number') s.fanfareNoteDuration = a.fanfareNoteDuration;
-    if (typeof a.fanfareNoteGap === 'number') s.fanfareNoteGap = a.fanfareNoteGap;
     if (typeof a.volume === 'number') s.volume = a.volume;
     if (typeof a.classStartSound === 'boolean') s.classStartSound = a.classStartSound;
     if (typeof a.classEndSound === 'boolean') s.classEndSound = a.classEndSound;
@@ -177,9 +189,9 @@ function applyConfigSettings(data) {
     for (const [name, preset] of Object.entries(data.competitionPresets)) {
       if (preset && typeof preset === 'object') {
         APP_SETTINGS.competitionPresets[name] = {
-          roundDurationSec: typeof preset.roundDurationSec === 'number' ? preset.roundDurationSec : 300,
-          restDurationSec: typeof preset.restDurationSec === 'number' ? preset.restDurationSec : 60,
-          numRounds: typeof preset.numRounds === 'number' ? preset.numRounds : 1
+          roundDurationSec: isValidSeconds(preset.roundDurationSec) ? preset.roundDurationSec : 300,
+          restDurationSec: isValidSeconds(preset.restDurationSec) ? preset.restDurationSec : 60,
+          numRounds: isValidSeconds(preset.numRounds) ? preset.numRounds : 0
         };
       }
     }
@@ -203,6 +215,21 @@ const PHASES = {
   ROUND: 'ROUND',
   REST: 'REST'
 };
+
+/**
+ * Decide whether a tick that started in PREP should play a prep beep, and
+ * for which second. Returns null when no beep is due — including the final
+ * tick (remaining 0), where the round-start bell plays instead.
+ * @param {string} phaseBeforeTick - Phase when the tick started
+ * @param {number} remainingSec - Prep seconds remaining after the tick
+ * @param {number} prepDurationSec
+ * @returns {number|null} 1-based prep second to beep for, or null
+ */
+function prepBeepSecond(phaseBeforeTick, remainingSec, prepDurationSec) {
+  if (phaseBeforeTick !== PHASES.PREP) return null;
+  if (remainingSec < 1 || remainingSec > prepDurationSec - 1) return null;
+  return remainingSec + 1;
+}
 
 // --- StorageManager ---
 
@@ -232,11 +259,13 @@ class StorageManager {
         return { ...DEFAULT_CONFIG };
       }
       const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_CONFIG };
+      const pick = (key) => (isValidSeconds(parsed[key]) ? parsed[key] : DEFAULT_CONFIG[key]);
       return {
-        roundDurationSec: typeof parsed.roundDurationSec === 'number' ? parsed.roundDurationSec : DEFAULT_CONFIG.roundDurationSec,
-        restDurationSec: typeof parsed.restDurationSec === 'number' ? parsed.restDurationSec : DEFAULT_CONFIG.restDurationSec,
-        numRounds: typeof parsed.numRounds === 'number' ? parsed.numRounds : DEFAULT_CONFIG.numRounds,
-        prepDurationSec: typeof parsed.prepDurationSec === 'number' ? parsed.prepDurationSec : DEFAULT_CONFIG.prepDurationSec
+        roundDurationSec: pick('roundDurationSec'),
+        restDurationSec: pick('restDurationSec'),
+        numRounds: pick('numRounds'),
+        prepDurationSec: pick('prepDurationSec')
       };
     } catch (e) {
       // JSON.parse failed (corrupted data) or localStorage unavailable
@@ -279,12 +308,87 @@ class TimerEngine {
     this.state = state;
     this.onTick = onTick || function() {};
     this.onPhaseChange = onPhaseChange || function() {};
+    // Monotonic deadlines ignore NTP/manual wall-clock changes.
+    // Explicit page suspension pauses elapsed time; background throttling catches up.
+    this._nextTickAt = 0;
+    this._pausedRemainderMs = null;
+  }
+
+  // A frozen page has no reliable elapsed clock on every OS. Pause explicitly
+  // instead of guessing from a wall clock that may have changed during sleep.
+  suspend() {
+    if (this.state.phase !== PHASES.IDLE && !this.state.paused) {
+      this._resumeAfterSuspend = true;
+      this.pause();
+    }
+  }
+
+  resumeFromSuspend() {
+    if (this._resumeAfterSuspend) this.resume();
+    this._resumeAfterSuspend = false;
   }
 
   /**
-   * Begin a session. Always starts with a 5-second prep countdown with audio cues,
-   * then transitions to ROUND with an uplifting fanfare.
-   * If prepDurationSec is configured to a higher value, that value is used instead.
+   * Arm a timeout for the next tick deadline. The timeout id is stored in
+   * state.intervalId so existing callers (and tests) can check for a
+   * running timer the same way they always have.
+   * @private
+   */
+  _scheduleNext() {
+    const delay = Math.max(0, this._nextTickAt - performance.now());
+    this.state.intervalId = setTimeout(() => this._drive(), delay);
+  }
+
+  /**
+   * Fire every tick whose deadline has passed, then re-arm. If the browser
+   * throttled timers for several seconds, advance missed state silently and
+   * emit countdown cues only for the most recent second. Retain the latest
+   * transition's cues even when that transition occurred on an earlier tick.
+   * @private
+   */
+  _drive() {
+    this._clearTimer();
+    const now = performance.now();
+    let guard = 0;
+    let latestTransitionCues = [];
+    try {
+      while (now >= this._nextTickAt && guard++ < 3600) {
+        this._nextTickAt += 1000;
+        this.silent = this._nextTickAt <= now;
+        this._transitionCues = [];
+        this.tick();
+        if (this._transitionCues.length) latestTransitionCues = this._transitionCues;
+        if (this.state.phase === PHASES.IDLE || this.state.paused) break;
+      }
+    } finally {
+      this.silent = false;
+      this._transitionCues = null;
+    }
+    for (const cue of latestTransitionCues) cue();
+    if (this.state.phase !== PHASES.IDLE && !this.state.paused) this._scheduleNext();
+  }
+
+  // Group fanfare, bell and flash from one tick; catch-up plays only the
+  // newest group. State/UI callbacks still run immediately on every tick.
+  emitTransitionCue(cue) {
+    if (this._transitionCues) this._transitionCues.push(cue);
+    else cue();
+  }
+
+  /**
+   * Cancel any armed tick timeout.
+   * @private
+   */
+  _clearTimer() {
+    if (this.state.intervalId !== null) {
+      clearTimeout(this.state.intervalId);
+      this.state.intervalId = null;
+    }
+  }
+
+  /**
+   * Begin a session. If config.prepDurationSec > 0, starts with a prep countdown
+   * (with audio cues) before transitioning to ROUND; otherwise goes straight to ROUND.
    * If already running (not IDLE), the call is ignored.
    */
   start() {
@@ -310,9 +414,9 @@ class TimerEngine {
       this.onPhaseChange(this.state, oldPhase, this.state.phase);
     }
 
-    this.state.intervalId = setInterval(() => {
-      this.tick();
-    }, 1000);
+    this._pausedRemainderMs = null;
+    this._nextTickAt = performance.now() + 1000;
+    this._scheduleNext();
   }
 
   /**
@@ -320,10 +424,8 @@ class TimerEngine {
    * resets remainingSec to config.roundDurationSec and currentRound to 0.
    */
   stop() {
-    if (this.state.intervalId !== null) {
-      clearInterval(this.state.intervalId);
-      this.state.intervalId = null;
-    }
+    this._clearTimer();
+    this._pausedRemainderMs = null;
 
     const oldPhase = this.state.phase;
     this.state.phase = PHASES.IDLE;
@@ -344,10 +446,10 @@ class TimerEngine {
    */
   pause() {
     if (this.state.phase === PHASES.IDLE || this.state.paused) return;
-    if (this.state.intervalId !== null) {
-      clearInterval(this.state.intervalId);
-      this.state.intervalId = null;
-    }
+    // Remember how much of the current second was left so resume() picks up
+    // exactly where the countdown stopped instead of restarting the second.
+    this._pausedRemainderMs = Math.min(1000, Math.max(0, this._nextTickAt - performance.now()));
+    this._clearTimer();
     this.state.paused = true;
   }
 
@@ -358,9 +460,10 @@ class TimerEngine {
   resume() {
     if (!this.state.paused) return;
     this.state.paused = false;
-    this.state.intervalId = setInterval(() => {
-      this.tick();
-    }, 1000);
+    const remainder = this._pausedRemainderMs === null ? 1000 : this._pausedRemainderMs;
+    this._pausedRemainderMs = null;
+    this._nextTickAt = performance.now() + remainder;
+    this._scheduleNext();
   }
 
   /**
@@ -409,7 +512,7 @@ class TimerEngine {
           // Last round in limited mode — skip rest, go straight to IDLE
           this.stop();
         } else {
-0          // Check if rest duration is 0 — skip rest, go directly to next round
+          // Check if rest duration is 0 — skip rest, go directly to next round
           const restIdx = this.state.currentRound - 1;
           const rd = this.state.restDurations;
           const restSec = rd ? rd[restIdx % rd.length] : this.state.config.restDurationSec;
@@ -465,6 +568,59 @@ class AudioManager {
   constructor() {
     this.audioCtx = null;
     this.disabled = false;
+    this._clips = {}; // src → preloaded HTMLAudioElement (cloned per play)
+  }
+
+  /**
+   * Fetch and decode the bell files once so the first ring of a session does
+   * not wait on a network round-trip.
+   */
+  preload() {
+    for (const src of AudioManager.CLIPS) this._clip(src);
+  }
+
+  /**
+   * Return the cached Audio element for a file, creating it on first use.
+   * @param {string} src
+   * @returns {HTMLAudioElement|null}
+   * @private
+   */
+  _clip(src) {
+    if (!this._clips[src]) {
+      try {
+        const audio = new Audio(src);
+        audio.preload = 'auto';
+        this._clips[src] = audio;
+      } catch (e) {
+        return null;
+      }
+    }
+    return this._clips[src];
+  }
+
+  /**
+   * Play a preloaded clip. Each play uses a clone so overlapping rings
+   * (e.g. both dual timers ending together) do not cut each other off.
+   * @param {string} src
+   * @param {number} [stopAfterMs] - Optionally stop playback after this delay
+   * @private
+   */
+  _playFile(src, stopAfterMs) {
+    try {
+      const base = this._clip(src);
+      if (!base) return;
+      const audio = base.cloneNode();
+      audio.volume = APP_SETTINGS.audio.volume;
+      const p = audio.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch(e => console.warn(`Audio play failed (${src}):`, e));
+      }
+      if (stopAfterMs) {
+        setTimeout(() => { audio.pause(); audio.currentTime = 0; }, stopAfterMs);
+      }
+    } catch (e) {
+      console.warn(`Audio error (${src}):`, e);
+    }
   }
 
   /**
@@ -510,7 +666,9 @@ class AudioManager {
       osc.start(now);
       osc.stop(now + duration);
     } catch (e) {
-      this.disabled = true;
+      // A single failed oscillator (e.g. a context still resuming) must not
+      // silence every later beep — only context creation disables audio.
+      console.warn('Tone playback failed:', e);
     }
   }
 
@@ -534,62 +692,14 @@ class AudioManager {
    * Boxing ring bell to signal round start — 3 quick strikes.
    */
   playRoundStartFanfare() {
-    try {
-      const audio = new Audio('boxing-bell-single-loud.mp3');
-      audio.volume = APP_SETTINGS.audio.volume;
-      audio.play();
-      setTimeout(() => { audio.pause(); audio.currentTime = 0; }, 2000);
-    } catch (e) {
-      // Silently disable on failure
-    }
+    this._playFile('boxing-bell-single-loud.mp3', 2000);
   }
 
   /**
    * Boxing ring bell to signal end of round — single strike.
    */
   playEndOfRoundBeep() {
-    try {
-      const audio = new Audio('boxing-bell-loud.mp3');
-      audio.volume = APP_SETTINGS.audio.volume;
-      audio.play().catch(e => console.warn('End-of-round audio play failed:', e));
-    } catch (e) {
-      console.warn('End-of-round audio error:', e);
-    }
-  }
-
-  /**
-   * Synthesize a single boxing bell strike using layered oscillators.
-   * @param {number} startTime - AudioContext time to start
-   * @param {number} vol - Volume (0-1)
-   * @param {number} duration - Decay duration in seconds
-   */
-  _playBellStrike(startTime, vol, duration) {
-    if (!this.audioCtx) return;
-    // Layer two detuned oscillators for a metallic bell timbre
-    const freqs = [1200, 1500];
-    freqs.forEach(freq => {
-      const osc = this.audioCtx.createOscillator();
-      const gain = this.audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(vol, startTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
-      osc.connect(gain);
-      gain.connect(this.audioCtx.destination);
-      osc.start(startTime);
-      osc.stop(startTime + duration);
-    });
-    // Add a short high-frequency click for attack
-    const click = this.audioCtx.createOscillator();
-    const clickGain = this.audioCtx.createGain();
-    click.type = 'square';
-    click.frequency.value = 3000;
-    clickGain.gain.setValueAtTime(vol * 0.3, startTime);
-    clickGain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.03);
-    click.connect(clickGain);
-    clickGain.connect(this.audioCtx.destination);
-    click.start(startTime);
-    click.stop(startTime + 0.05);
+    this._playFile('boxing-bell-loud.mp3');
   }
 
   /**
@@ -603,13 +713,7 @@ class AudioManager {
    * Timer 2 end-of-round: different bell sound.
    */
   playEndOfRoundBeepT2() {
-    try {
-      const audio = new Audio('boxing-bell-single-loud.mp3');
-      audio.volume = APP_SETTINGS.audio.volume;
-      audio.play().catch(e => console.warn('T2 end-of-round audio play failed:', e));
-    } catch (e) {
-      console.warn('T2 end-of-round audio error:', e);
-    }
+    this._playFile('boxing-bell-single-loud.mp3');
   }
 
   /**
@@ -631,26 +735,14 @@ class AudioManager {
    * Plays G5 → E5 → C5 pattern three times so it's unmissable.
    */
   playEndOfClassRing() {
-    try {
-      const audio = new Audio('boxing-bell-single-loud.mp3');
-      audio.volume = APP_SETTINGS.audio.volume;
-      audio.play().catch(e => console.warn('End-of-class audio play failed:', e));
-    } catch (e) {
-      console.warn('End-of-class audio error:', e);
-    }
+    this._playFile('boxing-bell-single-loud.mp3');
   }
 
   /**
    * Sound to signal the start of a class.
    */
   playStartOfClassRing() {
-    try {
-      const audio = new Audio('boxing-bell-single.mp3');
-      audio.volume = APP_SETTINGS.audio.volume;
-      audio.play().catch(e => console.warn('Start-of-class audio play failed:', e));
-    } catch (e) {
-      console.warn('Start-of-class audio error:', e);
-    }
+    this._playFile('boxing-bell-single.mp3');
   }
 
   /**
@@ -683,7 +775,7 @@ class AudioManager {
       osc.start(now);
       osc.stop(now + 0.15);
     } catch (e) {
-      // Silently disable on failure
+      console.warn('Muffle playback failed:', e);
     }
   }
 
@@ -712,9 +804,136 @@ class AudioManager {
       osc.start(now);
       osc.stop(now + 0.25);
     } catch (e) {
-      // Silently disable on failure
+      console.warn('Cancel tone playback failed:', e);
     }
   }
+}
+
+AudioManager.CLIPS = [
+  'boxing-bell-loud.mp3',
+  'boxing-bell-single-loud.mp3',
+  'boxing-bell-single.mp3'
+];
+
+// --- Icons ---
+
+// Inline SVG icons shared by the preset label, round list and preset menus.
+// Each takes the size/viewBox attribute string so callers control sizing.
+const ICONS = {
+  chainsaw: (s) => `<svg ${s} fill="currentColor"><rect x="2" y="14" width="3" height="8" rx="0.5"/><rect x="7" y="6" width="3" height="16" rx="0.5"/><rect x="12" y="14" width="3" height="8" rx="0.5"/><rect x="17" y="6" width="3" height="16" rx="0.5"/></svg>`,
+  ladderUp: (s) => `<svg ${s} fill="currentColor"><rect x="2" y="18" width="3" height="4" rx="0.5"/><rect x="7" y="14" width="3" height="8" rx="0.5"/><rect x="12" y="9" width="3" height="13" rx="0.5"/><rect x="17" y="4" width="3" height="18" rx="0.5"/></svg>`,
+  ladderDown: (s) => `<svg ${s} fill="currentColor"><rect x="2" y="4" width="3" height="18" rx="0.5"/><rect x="7" y="9" width="3" height="13" rx="0.5"/><rect x="12" y="14" width="3" height="8" rx="0.5"/><rect x="17" y="18" width="3" height="4" rx="0.5"/></svg>`,
+  pyramid: (s) => `<svg ${s} fill="currentColor"><rect x="1" y="16" width="3" height="6" rx="0.5"/><rect x="5.5" y="11" width="3" height="11" rx="0.5"/><rect x="10" y="5" width="3" height="17" rx="0.5"/><rect x="14.5" y="11" width="3" height="11" rx="0.5"/><rect x="19" y="16" width="3" height="6" rx="0.5"/></svg>`,
+  invPyramid: (s) => `<svg ${s} fill="currentColor"><rect x="1" y="5" width="3" height="17" rx="0.5"/><rect x="5.5" y="11" width="3" height="11" rx="0.5"/><rect x="10" y="16" width="3" height="6" rx="0.5"/><rect x="14.5" y="11" width="3" height="11" rx="0.5"/><rect x="19" y="5" width="3" height="17" rx="0.5"/></svg>`,
+  tabata: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`,
+  dual: (s) => `<svg ${s} fill="currentColor"><rect x="1" y="6" width="9" height="16" rx="1" opacity="0.8"/><rect x="14" y="6" width="9" height="16" rx="1" opacity="0.8"/></svg>`,
+  kids: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><path d="M12 8v6"/><path d="M9 21l3-7 3 7"/><path d="M7 13l5 2 5-2"/></svg>`,
+  belt: (s, color) => {
+    const edge = color === '#ffffff' ? '#888' : color;
+    const knot = color === '#ffffff' ? '#888' : 'rgba(0,0,0,0.3)';
+    return `<svg ${s} fill="none"><rect x="1" y="9" width="22" height="6" rx="1" fill="${color}" stroke="${edge}" stroke-width="0.5"/><rect x="10" y="7" width="4" height="10" rx="1" fill="${color}" stroke="${knot}" stroke-width="0.5"/><line x1="12" y1="17" x2="11" y2="21" stroke="${edge}" stroke-width="1.5" stroke-linecap="round"/><line x1="12" y1="17" x2="13" y2="21" stroke="${edge}" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  },
+  gear: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
+  repeat: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>`,
+  play: (s) => `<svg ${s} fill="currentColor"><path d="M7 4l13 8-13 8z"/></svg>`,
+  pause: (s) => `<svg ${s} fill="currentColor"><rect x="5" y="4" width="5" height="16" rx="1"/><rect x="14" y="4" width="5" height="16" rx="1"/></svg>`,
+  blank: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/></svg>`,
+  power: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></svg>`,
+  download: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>`,
+  snow: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M3.3 7l17.4 10"/><path d="M3.3 17L20.7 7"/><path d="M9 4.5l3 2 3-2"/><path d="M9 19.5l3-2 3 2"/><path d="M4.5 9.5l3.5 1-1 3.5"/><path d="M19.5 14.5l-3.5-1 1-3.5"/><path d="M4.5 14.5l3.5-1-1-3.5"/><path d="M19.5 9.5l-3.5 1 1 3.5"/></svg>`
+};
+
+const BELT_COLORS = {
+  white: '#ffffff', blue: '#1e90ff', purple: '#9b30ff', brown: '#8B4513', black: '#222222'
+};
+
+/**
+ * Pick the icon for a preset by its display name (competition belts, kids,
+ * training shapes). Returns '' when no icon applies.
+ * @param {string} name
+ * @param {string} s - SVG size/viewBox attributes
+ * @returns {string}
+ */
+function presetIcon(name, s) {
+  if (!name) return '';
+  const lower = name.toLowerCase();
+  if (lower.includes('kid') || lower.includes('child') || lower.includes('youth')) return ICONS.kids(s);
+  for (const belt of Object.keys(BELT_COLORS)) {
+    if (lower.includes(belt)) return ICONS.belt(s, BELT_COLORS[belt]);
+  }
+  if (lower === 'chainsaw') return ICONS.chainsaw(s);
+  if (lower === 'pyramid') return ICONS.pyramid(s);
+  if (lower.includes('inv')) return ICONS.invPyramid(s);
+  if (lower.includes('ladder up')) return ICONS.ladderUp(s);
+  if (lower.includes('ladder down')) return ICONS.ladderDown(s);
+  if (lower === 'tabata') return ICONS.tabata(s);
+  if (lower === 'dual timer') return ICONS.dual(s);
+  return '';
+}
+
+// Training preset ids → display names and icons
+const TRAINING_MODES = {
+  pyramid: { label: 'Pyramid', icon: 'pyramid' },
+  inv_pyramid: { label: 'Inv. Pyramid', icon: 'invPyramid' },
+  ladder_up: { label: 'Ladder Up', icon: 'ladderUp' },
+  ladder_down: { label: 'Ladder Down', icon: 'ladderDown' }
+};
+
+// Hold duration (ms) that turns a tap on ▶ / OK / Menu into a long press
+const HOLD_MS = 800;
+
+// Rounds assumed when a training preset's rounds prompt is confirmed empty
+const TRAINING_DEFAULT_ROUNDS = 4;
+// Total minutes assumed when no class is in progress to derive one from
+const TRAINING_DEFAULT_MINUTES = 10;
+
+// Starting values for the chainsaw duration prompts
+const CHAINSAW_DEFAULT_ROUND_SEC = 300;
+const CHAINSAW_DEFAULT_REST_SEC = 30;
+
+/**
+ * Remote-control vocabulary. The app is driven by an Apple Remote through a
+ * Flirc receiver, which emits ordinary keystrokes:
+ *   ring  → Arrow keys (hold Up/Down → PageUp/PageDown via Flirc long-press)
+ *   OK    → Enter
+ *   ▶⏸    → Space   (hold → '0' via Flirc long-press)
+ *   Menu  → Escape  (hold → Delete via Flirc long-press)
+ * The original numpad bindings keep working for keyboards.
+ */
+const TRAINING_MENU_ITEMS = [
+  { key: '0', icon: 'chainsaw', name: 'Chainsaw', note: 'Alternating round/rest' },
+  { key: '1', icon: 'ladderUp', name: 'Ladder Up', note: 'Short → long' },
+  { key: '2', icon: 'ladderDown', name: 'Ladder Down', note: 'Long → short' },
+  { key: '3', icon: 'pyramid', name: 'Pyramid', note: 'Short → long → short' },
+  { key: '4', icon: 'invPyramid', name: 'Inv. Pyramid', note: 'Long → short → long' },
+  { key: '5', icon: 'tabata', name: 'Tabata', note: '20s on / 10s off × 8' },
+  { key: '6', icon: 'dual', name: 'Dual Timer', note: 'Two independent timers' }
+];
+
+/**
+ * Move a list selection by `delta`, clamped to the list bounds.
+ * @param {number} index
+ * @param {number} delta
+ * @param {number} length
+ * @returns {number}
+ */
+function moveSelection(index, delta, length) {
+  if (length <= 0) return 0;
+  return Math.min(length - 1, Math.max(0, index + delta));
+}
+
+/**
+ * Step a numeric overlay input buffer with the ring. An empty buffer starts
+ * from `base` (the default or current value) so the first press is predictable.
+ * @param {string} buffer - Current typed digits ('' when empty)
+ * @param {number} base - Value assumed when the buffer is empty
+ * @param {number} delta - Signed step
+ * @param {number} min - Lower bound
+ * @returns {string} New buffer (always digits)
+ */
+function stepNumericBuffer(buffer, base, delta, min) {
+  const current = buffer === '' || !isNumeric(buffer) ? base : parseInt(buffer, 10);
+  return String(Math.max(min, current + delta));
 }
 
 // --- Renderer ---
@@ -736,8 +955,6 @@ class Renderer {
     this.prepOverlayEl = document.getElementById('prep-overlay');
     this.prepCountdownEl = document.getElementById('prep-countdown');
     this.screenFlashEl = document.getElementById('screen-flash');
-    this.pauseOverlayEl = document.getElementById('pause-overlay');
-    this.roundsOverEl = document.getElementById('rounds-over');
     this.scheduleDisplayEl = document.getElementById('schedule-display');
     this.roundListEl = document.getElementById('round-list');
     this.nextClassDisplayEl = document.getElementById('next-class-display');
@@ -747,6 +964,36 @@ class Renderer {
     this.presetLabelEl = document.getElementById('preset-label');
     this.statusBarEl = document.getElementById('status-bar');
     this.stealth = false;
+    this.showScreensKey = false; // Only true when dual-screen mode is enabled (?dual=1)
+    // Supplies remaining seconds in the active class (wired by the app); the
+    // round list uses it to flag rounds that would run past the class end.
+    this.remainingClassSecProvider = null;
+    this._lastRoundListHtml = null;
+    this._lastClockText = null;
+    this._lastWeekday = null;
+    this._weekdayFmt = null;
+  }
+
+  /**
+   * Write MM:SS into a timer element, reusing its two digit spans so each
+   * tick is two text writes instead of a full innerHTML re-parse.
+   * @param {HTMLElement} el
+   * @param {number} remainingSec
+   * @returns {{minsEl: HTMLElement, secsEl: HTMLElement}}
+   */
+  static setDigits(el, remainingSec) {
+    let minsEl = el.querySelector('.ts-minutes');
+    let secsEl = el.querySelector('.ts-seconds');
+    if (!minsEl || !secsEl) {
+      el.innerHTML = '<span class="ts-minutes"></span>:<span class="ts-seconds"></span>';
+      minsEl = el.querySelector('.ts-minutes');
+      secsEl = el.querySelector('.ts-seconds');
+    }
+    const mins = String(Math.floor(remainingSec / 60)).padStart(2, '0');
+    const secs = String(remainingSec % 60).padStart(2, '0');
+    if (minsEl.textContent !== mins) minsEl.textContent = mins;
+    if (secsEl.textContent !== secs) secsEl.textContent = secs;
+    return { minsEl, secsEl };
   }
 
   /**
@@ -755,21 +1002,16 @@ class Renderer {
    * @param {boolean} isActive - Whether the round phase is currently active
    */
   updateRoundDisplay(remainingSec, isActive) {
-    if (this.roundTimerEl) {
-      const mins = String(Math.floor(remainingSec / 60)).padStart(2, '0');
-      const secs = String(remainingSec % 60).padStart(2, '0');
-      this.roundTimerEl.innerHTML =
-        `<span class="ts-minutes">${mins}</span>:<span class="ts-seconds">${secs}</span>`;
-      this.roundTimerEl.classList.toggle('timer-active', isActive);
-      if (!isActive) this.roundTimerEl.classList.remove('timer-paused');
-      const spans = this.roundTimerEl.querySelectorAll('.ts-minutes, .ts-seconds');
-      if (isActive && remainingSec <= 10) {
-        this.roundTimerEl.style.backgroundColor = 'var(--accent-yellow)';
-        spans.forEach(s => s.style.borderColor = 'var(--accent-yellow)');
-      } else {
-        this.roundTimerEl.style.backgroundColor = '';
-        spans.forEach(s => s.style.borderColor = '');
-      }
+    if (!this.roundTimerEl) return;
+    const { minsEl, secsEl } = Renderer.setDigits(this.roundTimerEl, remainingSec);
+    this.roundTimerEl.classList.toggle('timer-active', isActive);
+    if (!isActive) this.roundTimerEl.classList.remove('timer-paused');
+    const warn = isActive && remainingSec <= 10;
+    const color = warn ? 'var(--accent-yellow)' : '';
+    if (this.roundTimerEl.style.backgroundColor !== color) {
+      this.roundTimerEl.style.backgroundColor = color;
+      minsEl.style.borderColor = color;
+      secsEl.style.borderColor = color;
     }
   }
 
@@ -779,36 +1021,45 @@ class Renderer {
    * @param {boolean} isActive - Whether the rest phase is currently active
    */
   updateRestDisplay(remainingSec, isActive) {
-    if (this.restTimerEl) {
-      const mins = String(Math.floor(remainingSec / 60)).padStart(2, '0');
-      const secs = String(remainingSec % 60).padStart(2, '0');
-      this.restTimerEl.innerHTML =
-        `<span class="ts-minutes">${mins}</span>:<span class="ts-seconds">${secs}</span>`;
-      this.restTimerEl.classList.toggle('timer-active', isActive);
-      if (!isActive) this.restTimerEl.classList.remove('timer-paused');
-    }
+    if (!this.restTimerEl) return;
+    Renderer.setDigits(this.restTimerEl, remainingSec);
+    this.restTimerEl.classList.toggle('timer-active', isActive);
+    if (!isActive) this.restTimerEl.classList.remove('timer-paused');
+  }
+
+  /**
+   * Format a Date as 12-hour clock parts without locale lookups.
+   * @param {Date} now
+   * @returns {{hhmm: string, ss: string, ampm: string}}
+   */
+  static clockParts(now) {
+    const h = now.getHours();
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    return { hhmm: `${h12}:${mm}`, ss, ampm: h >= 12 ? 'PM' : 'AM' };
   }
 
   /**
    * Update the wall clock display in HH:MM:SS format with day of week.
+   * @param {Date} [now]
    */
-  updateClockDisplay() {
-    const now = new Date();
+  updateClockDisplay(now) {
+    now = now || new Date();
     if (this.clockEl) {
-      const time = now.toLocaleTimeString('en-US', { hour12: true });
-      const match = time.match(/^(.*\s?)(AM|PM)$/i);
-      if (match) {
-        const timePart = match[1].trim();
-        const lastColon = timePart.lastIndexOf(':');
-        const hhmm = timePart.substring(0, lastColon);
-        const ss = timePart.substring(lastColon + 1);
-        this.clockEl.innerHTML = `${hhmm}<span class="clock-seconds">${ss}</span> <span class="clock-ampm">${match[2]}</span>`;
-      } else {
-        this.clockEl.textContent = time;
+      const { hhmm, ss, ampm } = Renderer.clockParts(now);
+      const text = `${hhmm}${ss}${ampm}`;
+      if (text !== this._lastClockText) {
+        this._lastClockText = text;
+        this.clockEl.innerHTML = `${hhmm}<span class="clock-seconds">${ss}</span> <span class="clock-ampm">${ampm}</span>`;
       }
     }
     if (this.dayOfWeekEl) {
-      this.dayOfWeekEl.textContent = now.toLocaleDateString('en-US', { weekday: 'long' });
+      const day = now.getDay();
+      if (day !== this._lastWeekday) {
+        this._lastWeekday = day;
+        this.dayOfWeekEl.textContent = VALID_DAYS[day === 0 ? 6 : day - 1];
+      }
     }
   }
 
@@ -862,6 +1113,7 @@ class Renderer {
    */
   applyScreenFlash() {
     if (!this.screenFlashEl) return;
+    this.screenFlashEl.dataset.flashSequence = String(Number(this.screenFlashEl.dataset.flashSequence || 0) + 1);
     this.screenFlashEl.classList.remove('active');
     void this.screenFlashEl.offsetWidth;
     this.screenFlashEl.classList.add('active');
@@ -884,45 +1136,6 @@ class Renderer {
   }
 
   /**
-   * Show end-of-session announcement. Auto-hides after 3 seconds.
-   * @param {string} [message] - Custom message text (defaults to "Rounds Over")
-   */
-  showRoundsOver(message) {
-    if (!this.roundsOverEl) return;
-    const textEl = this.roundsOverEl.querySelector('.rounds-over-text');
-    if (textEl) textEl.textContent = message || 'Rounds Over';
-    this.roundsOverEl.classList.add('active');
-    setTimeout(() => {
-      this.hideRoundsOver();
-    }, 3000);
-  }
-
-  /**
-   * Hide the "Rounds Over" announcement.
-   */
-  hideRoundsOver() {
-    if (this.roundsOverEl) this.roundsOverEl.classList.remove('active');
-  }
-
-  /**
-   * Enter quick timer mode: hide rest section and round counter, change label to "Timer".
-   */
-  setQuickTimerMode() {
-    if (this.restSectionEl) this.restSectionEl.style.visibility = 'hidden';
-    if (this.roundCounterEl) this.roundCounterEl.style.visibility = 'hidden';
-    if (this.roundLabelEl) this.roundLabelEl.textContent = 'Timer';
-  }
-
-  /**
-   * Exit quick timer mode: restore rest section, round counter, and label.
-   */
-  clearQuickTimerMode() {
-    if (this.restSectionEl) this.restSectionEl.style.visibility = '';
-    if (this.roundCounterEl) this.roundCounterEl.style.visibility = '';
-    if (this.roundLabelEl) this.roundLabelEl.textContent = 'Round';
-  }
-
-  /**
    * Toggle stealth mode. Hides all clocks and timers except the rest timer during REST.
    */
   toggleStealth() {
@@ -934,8 +1147,14 @@ class Renderer {
    * Apply current stealth visibility state to DOM elements.
    * @param {string} [phase] - Current timer phase (optional, used to show rest during REST)
    */
-  applyStealth(phase) {
+  applyStealth(phase, phase2) {
+    if (phase === undefined && this.phaseProvider) [phase, phase2] = this.phaseProvider();
+    else if (phase2 === undefined && this.phaseProvider) phase2 = this.phaseProvider()[1];
     const hidden = this.stealth ? 'hidden' : '';
+    const round2 = document.getElementById('round-section-2');
+    const rest2 = document.getElementById('rest-section-2');
+    if (round2) round2.style.visibility = hidden;
+    if (rest2) rest2.style.visibility = this.stealth && phase2 !== PHASES.REST ? 'hidden' : '';
     if (this.clockAreaEl) this.clockAreaEl.style.visibility = hidden;
     const topCenterBar = document.getElementById('top-center-bar');
     if (topCenterBar) topCenterBar.style.visibility = hidden;
@@ -969,49 +1188,13 @@ class Renderer {
   }
 
   /**
-   * Update the Start/Stop label based on timer phase.
-   * @param {boolean} running - True if timer is running (not IDLE)
-   */
-  updateStartStopLabel(running) {
-    // Legacy — now handled by updateStatusBar
-  }
-
-  /**
-   * Update the context-aware status bar based on current app state.
-   * @param {'clock'|'ready'|'running'|'paused'|'editing'} mode
+   * The corner key-hint box was removed; this keeps the element empty so the
+   * callers and the display-sync section list stay unchanged.
+   * @param {'clock'|'ready'|'running'|'paused'|'editing'|'menu'|'training'|'competition'|'hidden'} mode
    */
   updateStatusBar(mode) {
     if (!this.statusBarEl) return;
-    const row = (label, key) => `<div class="sb-row"><span class="sb-label">${label}</span><span class="sb-key">${key}</span></div>`;
-
-    let html = '';
-    switch (mode) {
-      case 'clock':
-        html = row('Ready', 'Enter') + row('Edit', '▲▼') + row('Compete', '/') + row('Train', '*') + row('Stealth', '.');
-        break;
-      case 'ready':
-        html = row('Go', 'Enter') + row('Back', '0') + row('Edit', '▲▼') + row('Compete', '/') + row('Train', '*');
-        break;
-      case 'running':
-        html = row('Pause', 'Enter') + row('Stop', '0');
-        break;
-      case 'paused':
-        html = row('Resume', 'Enter') + row('Stop', '0');
-        break;
-      case 'editing':
-        html = row('Adjust', '+−') + row('Switch', '▲▼') + row('Navigate', '◀▶') + row('Go', 'Enter') + row('Done', '0');
-        break;
-      case 'training':
-        html = row('Close', '*') + row('Credits', '/');
-        break;
-      case 'competition':
-        html = row('Close', '/');
-        break;
-      case 'hidden':
-        html = '';
-        break;
-    }
-    this.statusBarEl.innerHTML = html;
+    this.statusBarEl.innerHTML = '';
   }
 
   /**
@@ -1023,20 +1206,15 @@ class Renderer {
    */
   updateRoundCounter(current, total) {
     if (!this.roundCounterEl) return;
+    let html;
     if (current === 0) {
-      if (total === 0) {
-        this.roundCounterEl.innerHTML =
-          `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.15em;margin-right:0.3em;"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>Repeat`;
-      } else {
-        this.roundCounterEl.innerHTML = `${total} round${total > 1 ? 's' : ''}`;
-      }
-      return;
-    }
-    if (total === 0) {
-      this.roundCounterEl.innerHTML = `Round ${current}`;
+      html = total === 0
+        ? `${ICONS.repeat('width="1em" height="1em" viewBox="0 0 24 24" style="vertical-align:-0.15em;margin-right:0.3em;"')}Repeat`
+        : `${total} round${total > 1 ? 's' : ''}`;
     } else {
-      this.roundCounterEl.innerHTML = `Round ${current} / ${total}`;
+      html = total === 0 ? `Round ${current}` : `Round ${current} / ${total}`;
     }
+    if (this.roundCounterEl.innerHTML !== html) this.roundCounterEl.innerHTML = html;
   }
 
   /**
@@ -1047,45 +1225,10 @@ class Renderer {
   updatePresetLabel(name) {
     if (!this.presetLabelEl) return;
     const _s = 'width="1.2em" height="1.2em" viewBox="0 0 24 24"';
-
-    if (!name) {
-      // Custom gear icon
-      const gear = `<svg ${_s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
-      this.presetLabelEl.innerHTML = `${gear}Custom`;
-      return;
-    }
-
-    const lower = name.toLowerCase();
-
-    // Belt icon helper
-    const beltIcon = (color) =>
-      `<svg ${_s} fill="none"><rect x="1" y="9" width="22" height="6" rx="1" fill="${color}" stroke="${color === '#ffffff' ? '#888' : color}" stroke-width="0.5"/><rect x="10" y="7" width="4" height="10" rx="1" fill="${color}" stroke="${color === '#ffffff' ? '#888' : 'rgba(0,0,0,0.3)'}" stroke-width="0.5"/><line x1="12" y1="17" x2="11" y2="21" stroke="${color === '#ffffff' ? '#888' : color}" stroke-width="1.5" stroke-linecap="round"/><line x1="12" y1="17" x2="13" y2="21" stroke="${color === '#ffffff' ? '#888' : color}" stroke-width="1.5" stroke-linecap="round"/></svg>`;
-    const kidsIcon = `<svg ${_s} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><path d="M12 8v6"/><path d="M9 21l3-7 3 7"/><path d="M7 13l5 2 5-2"/></svg>`;
-
-    // Training icons
-    const chainsawIcon = `<svg ${_s} fill="currentColor"><rect x="2" y="14" width="3" height="8" rx="0.5"/><rect x="7" y="6" width="3" height="16" rx="0.5"/><rect x="12" y="14" width="3" height="8" rx="0.5"/><rect x="17" y="6" width="3" height="16" rx="0.5"/></svg>`;
-    const pyramidIcon = `<svg ${_s} fill="currentColor"><rect x="1" y="16" width="3" height="6" rx="0.5"/><rect x="5.5" y="11" width="3" height="11" rx="0.5"/><rect x="10" y="5" width="3" height="17" rx="0.5"/><rect x="14.5" y="11" width="3" height="11" rx="0.5"/><rect x="19" y="16" width="3" height="6" rx="0.5"/></svg>`;
-    const invPyramidIcon = `<svg ${_s} fill="currentColor"><rect x="1" y="5" width="3" height="17" rx="0.5"/><rect x="5.5" y="11" width="3" height="11" rx="0.5"/><rect x="10" y="16" width="3" height="6" rx="0.5"/><rect x="14.5" y="11" width="3" height="11" rx="0.5"/><rect x="19" y="5" width="3" height="17" rx="0.5"/></svg>`;
-    const ladderUpIcon = `<svg ${_s} fill="currentColor"><rect x="2" y="18" width="3" height="4" rx="0.5"/><rect x="7" y="14" width="3" height="8" rx="0.5"/><rect x="12" y="9" width="3" height="13" rx="0.5"/><rect x="17" y="4" width="3" height="18" rx="0.5"/></svg>`;
-    const ladderDownIcon = `<svg ${_s} fill="currentColor"><rect x="2" y="4" width="3" height="18" rx="0.5"/><rect x="7" y="9" width="3" height="13" rx="0.5"/><rect x="12" y="14" width="3" height="8" rx="0.5"/><rect x="17" y="18" width="3" height="4" rx="0.5"/></svg>`;
-
-    let icon = '';
-    if (lower === 'quick timer') icon = `<svg ${_s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
-    else if (lower.includes('kid') || lower.includes('child')) icon = kidsIcon;
-    else if (lower.includes('white')) icon = beltIcon('#ffffff');
-    else if (lower.includes('blue')) icon = beltIcon('#1e90ff');
-    else if (lower.includes('purple')) icon = beltIcon('#9b30ff');
-    else if (lower.includes('brown')) icon = beltIcon('#8B4513');
-    else if (lower.includes('black')) icon = beltIcon('#222222');
-    else if (lower === 'chainsaw') icon = chainsawIcon;
-    else if (lower === 'pyramid') icon = pyramidIcon;
-    else if (lower.includes('inv')) icon = invPyramidIcon;
-    else if (lower.includes('ladder up')) icon = ladderUpIcon;
-    else if (lower.includes('ladder down')) icon = ladderDownIcon;
-    else if (lower === 'tabata') icon = `<svg ${_s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`;
-    else icon = '';
-
-    this.presetLabelEl.innerHTML = `${icon}${name}`;
+    const html = name
+      ? `${presetIcon(name, _s)}${escapeHtml(name)}`
+      : `${ICONS.gear(_s)}Custom`;
+    if (this.presetLabelEl.innerHTML !== html) this.presetLabelEl.innerHTML = html;
   }
 
   /**
@@ -1095,45 +1238,45 @@ class Renderer {
    * @param {number} currentRound - Current round (1-based, 0 = idle/prep)
    * @param {string} [presetName] - Optional preset name to show as header
    */
-  updateRoundList(durations, currentRound, presetName, restDurations, restDurationSec, remainingClassSec) {
+  updateRoundList(durations, currentRound, presetName, restDurations, restDurationSec, remainingClassSec, currentRemainingSec, phase) {
     if (!this.roundListEl) return;
     if (!durations || durations.length === 0) {
-      this.roundListEl.classList.remove('active');
-      this.roundListEl.innerHTML = '';
+      this.hideRoundList();
       return;
     }
     this.roundListEl.classList.add('active');
     let html = '';
     if (presetName) {
       const _s = 'width="1.2em" height="1.2em" viewBox="0 0 24 24" style="vertical-align:-0.2em;margin-right:0.4em;"';
-      let icon = '';
-      const lower = presetName.toLowerCase();
-      if (lower === 'pyramid') {
-        icon = `<svg ${_s} fill="currentColor"><rect x="1" y="16" width="3" height="6" rx="0.5"/><rect x="5.5" y="11" width="3" height="11" rx="0.5"/><rect x="10" y="5" width="3" height="17" rx="0.5"/><rect x="14.5" y="11" width="3" height="11" rx="0.5"/><rect x="19" y="16" width="3" height="6" rx="0.5"/></svg>`;
-      } else if (lower === 'ladder up') {
-        icon = `<svg ${_s} fill="currentColor"><rect x="2" y="18" width="3" height="4" rx="0.5"/><rect x="7" y="14" width="3" height="8" rx="0.5"/><rect x="12" y="9" width="3" height="13" rx="0.5"/><rect x="17" y="4" width="3" height="18" rx="0.5"/></svg>`;
-      } else if (lower === 'ladder down') {
-        icon = `<svg ${_s} fill="currentColor"><rect x="2" y="4" width="3" height="18" rx="0.5"/><rect x="7" y="9" width="3" height="13" rx="0.5"/><rect x="12" y="14" width="3" height="8" rx="0.5"/><rect x="17" y="18" width="3" height="4" rx="0.5"/></svg>`;
-      } else if (lower === 'chainsaw') {
-        icon = `<svg ${_s} fill="currentColor"><rect x="2" y="14" width="3" height="8" rx="0.5"/><rect x="7" y="6" width="3" height="16" rx="0.5"/><rect x="12" y="14" width="3" height="8" rx="0.5"/><rect x="17" y="6" width="3" height="16" rx="0.5"/></svg>`;
-      } else if (lower === 'inv. pyramid') {
-        icon = `<svg ${_s} fill="currentColor"><rect x="1" y="5" width="3" height="17" rx="0.5"/><rect x="5.5" y="11" width="3" height="11" rx="0.5"/><rect x="10" y="16" width="3" height="6" rx="0.5"/><rect x="14.5" y="11" width="3" height="11" rx="0.5"/><rect x="19" y="5" width="3" height="17" rx="0.5"/></svg>`;
-      }
+      const icon = presetIcon(presetName, _s);
       const totalSec = durations.reduce((a, b) => a + b, 0);
       const totalMin = Math.round(totalSec / 60);
-      html += `<div style="color:var(--accent-green);font-weight:700;margin-bottom:0.5em;">${icon}${presetName} <span style="font-weight:400;color:var(--text-muted);font-size:0.8em;">${totalMin}m</span></div>`;
+      html += `<div style="color:var(--accent-green);font-weight:700;margin-bottom:0.5em;">${icon}${escapeHtml(presetName)} <span style="font-weight:400;color:var(--text-muted);font-size:0.8em;">${totalMin}m</span></div>`;
     }
 
-    // Calculate cumulative end time for each round to find overtime
+    // Calculate time from NOW until each round ends to find overtime.
+    // Rounds already completed are excluded; the current round contributes only
+    // its remaining time (during REST, the remaining rest + the next round).
     let overtimeMinutes = []; // per-round: 0 if not overtime, else minutes over
     if (remainingClassSec > 0) {
+      const inRest = phase === PHASES.REST;
+      const startRound = currentRound > 0 ? (inRest ? currentRound + 1 : currentRound) : 1;
       let cumulative = 0;
       for (let i = 0; i < durations.length; i++) {
-        if (i > 0) {
-          const restIdx = i - 1;
-          cumulative += restDurations ? restDurations[restIdx % restDurations.length] : (restDurationSec || 0);
+        const roundNum = i + 1;
+        if (roundNum < startRound) {
+          overtimeMinutes.push(0);
+          continue;
         }
-        cumulative += durations[i];
+        if (roundNum === startRound && currentRound > 0 && typeof currentRemainingSec === 'number') {
+          cumulative += inRest ? currentRemainingSec + durations[i] : currentRemainingSec;
+        } else {
+          if (roundNum > startRound) {
+            const restIdx = i - 1;
+            cumulative += restDurations ? restDurations[restIdx % restDurations.length] : (restDurationSec || 0);
+          }
+          cumulative += durations[i];
+        }
         if (cumulative > remainingClassSec) {
           overtimeMinutes.push(Math.ceil((cumulative - remainingClassSec) / 60));
         } else {
@@ -1151,22 +1294,22 @@ class Renderer {
       const overtimeTag = ot > 0 ? ` <span class="overtime-badge">${ot}m overtime</span>` : '';
       html += `<div class="${cls}"><span class="round-num">R${roundNum}</span> ${formatTime(dur)}${overtimeTag}</div>`;
     });
-    this.roundListEl.innerHTML = html;
+    // The list only changes on round transitions or when the class-remaining
+    // minute ticks over, so skip the re-parse when the markup is identical.
+    if (html !== this._lastRoundListHtml) {
+      this._lastRoundListHtml = html;
+      this.roundListEl.innerHTML = html;
+    }
   }
 
   /**
-   * Get remaining seconds in the current active class from the schedule display.
-   * @returns {number} Remaining seconds, or 0 if no active class.
+   * Remaining seconds in the current active class (0 when none).
+   * @returns {number}
    */
   getRemainingClassSec() {
-    const scheduleEl = document.getElementById('schedule-display');
-    const classTimeEl = scheduleEl ? scheduleEl.querySelector('.class-time') : null;
-    if (!classTimeEl) return 0;
-    const text = classTimeEl.textContent;
-    const hMatch = text.match(/(\d+)h/);
-    const mMatch = text.match(/(\d+)m/);
-    if (!hMatch && !mMatch) return 0;
-    return ((hMatch ? parseInt(hMatch[1], 10) : 0) * 60 + (mMatch ? parseInt(mMatch[1], 10) : 0)) * 60;
+    if (typeof this.remainingClassSecProvider !== 'function') return 0;
+    const sec = this.remainingClassSecProvider();
+    return Number.isFinite(sec) && sec > 0 ? sec : 0;
   }
 
   /**
@@ -1175,7 +1318,10 @@ class Renderer {
   hideRoundList() {
     if (!this.roundListEl) return;
     this.roundListEl.classList.remove('active');
-    this.roundListEl.innerHTML = '';
+    if (this._lastRoundListHtml !== '') {
+      this._lastRoundListHtml = '';
+      this.roundListEl.innerHTML = '';
+    }
   }
 
   /**
@@ -1226,8 +1372,9 @@ class Renderer {
       countdownStr = `in ${mins}m`;
     }
 
-    // Show day only if not today
-    const isToday = nextClass.dayOfWeek === todayName;
+    // Show day only if the class is actually within the next 24h — a same-weekday
+    // class that already passed today wrapped to next week and is NOT "today"
+    const isToday = nextClass.dayOfWeek === todayName && minutesUntil < 24 * 60;
     const dayLabel = isToday ? '' : `${nextClass.dayOfWeek} `;
     const countdownPart = isToday ? ` <span class="next-countdown">(${countdownStr})</span>` : '';
 
@@ -1240,7 +1387,7 @@ class Renderer {
     };
 
     this.nextClassDisplayEl.innerHTML =
-      `<span class="next-title">Next: ${nextClass.title}</span><br>` +
+      `<span class="next-title">Next: ${escapeHtml(nextClass.title)}</span><br>` +
       `<span class="next-time">${dayLabel}${fmtTime(nextClass.startTime)}</span>` +
       countdownPart;
   }
@@ -1258,17 +1405,14 @@ class Renderer {
     // Error message takes priority
     if (errorMsg) {
       this.scheduleDisplayEl.innerHTML =
-        `<span class="class-title" style="color: var(--accent-red);">${errorMsg}</span>`;
+        `<span class="class-title" style="color: var(--accent-red);">${escapeHtml(errorMsg)}</span>`;
       return;
     }
 
     // Active class: show title, classType, remaining time
     if (activeClass) {
       const now = new Date();
-      const [endH, endM] = activeClass.endTime.split(':').map(Number);
-      const endMinutes = endH * 60 + endM;
-      const nowMinutes = now.getHours() * 60 + now.getMinutes();
-      const remainingMin = Math.max(0, endMinutes - nowMinutes);
+      const remainingMin = Math.max(0, Math.ceil((classInstant(now, activeClass.endTime) - now) / 60000));
       const remainH = Math.floor(remainingMin / 60);
       const remainM = remainingMin % 60;
       const remainStr = remainH > 0
@@ -1276,8 +1420,8 @@ class Renderer {
         : `${remainM}m remaining`;
 
       this.scheduleDisplayEl.innerHTML =
-        `<span class="class-title">${activeClass.title}</span> ` +
-        `<span class="class-type">${activeClass.classType}</span><br>` +
+        `<span class="class-title">${escapeHtml(activeClass.title)}</span> ` +
+        `<span class="class-type">${escapeHtml(activeClass.classType)}</span><br>` +
         `<span class="class-time">${remainStr}</span>`;
       return;
     }
@@ -1292,15 +1436,16 @@ class Renderer {
         return `${time}<span class="clock-ampm">${suffix}</span>`;
       };
       this.scheduleDisplayEl.innerHTML =
-        `<span class="class-title">Next: ${nextClass.title}</span> ` +
-        `<span class="class-type">${nextClass.classType}</span><br>` +
+        `<span class="class-title">Next: ${escapeHtml(nextClass.title)}</span> ` +
+        `<span class="class-type">${escapeHtml(nextClass.classType)}</span><br>` +
         `<span class="class-time">${nextClass.dayOfWeek} at ${fmtTime(nextClass.startTime)}</span>`;
       return;
     }
 
-    // No classes scheduled
-    this.scheduleDisplayEl.innerHTML =
-      `<span class="class-time">No classes scheduled</span>`;
+    // Schedule off: show nothing. Schedule on but empty: say so.
+    this.scheduleDisplayEl.innerHTML = APP_SETTINGS.scheduleEnabled
+      ? `<span class="class-time">No classes scheduled</span>`
+      : '';
   }
 }
 
@@ -1314,6 +1459,16 @@ class ClassProgressRenderer {
   constructor() {
     this.canvas = document.getElementById('class-progress');
     this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
+    // Render at device resolution so the ring and logo stay crisp on HiDPI
+    // TVs; the CSS size stays at the markup's width/height.
+    if (this.canvas) {
+      const cssSize = this.canvas.width || 250;
+      const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+      this.canvas.style.width = `${cssSize}px`;
+      this.canvas.style.height = `${cssSize}px`;
+      this.canvas.width = Math.round(cssSize * dpr);
+      this.canvas.height = Math.round(cssSize * dpr);
+    }
     this._activeClass = null;
     this._logoImg = null;
     this._logoScale = 1.0; // 1.0 = full size, 0.0 = center size
@@ -1328,7 +1483,6 @@ class ClassProgressRenderer {
   }
 
   setActiveClass(activeClass) {
-    const wasActive = !!this._activeClass;
     this._activeClass = activeClass;
     if (!activeClass) {
       if (this.canvas) this.canvas.classList.remove('active');
@@ -1388,17 +1542,14 @@ class ClassProgressRenderer {
     }
 
     if (this._activeClass) {
-      const [startH, startM] = this._activeClass.startTime.split(':').map(Number);
-      const [endH, endM] = this._activeClass.endTime.split(':').map(Number);
-      const startMin = startH * 60 + startM;
-      const endMin = endH * 60 + endM;
-      const totalMin = endMin - startMin;
+      const now = new Date();
+      const start = classInstant(now, this._activeClass.startTime);
+      const end = classInstant(now, this._activeClass.endTime);
+      const totalMin = (end - start) / 60000;
 
       if (totalMin > 0) {
         const totalSlices = totalMin;
-        const now = new Date();
-        const nowMin = now.getHours() * 60 + now.getMinutes();
-        const elapsed = Math.max(0, nowMin - startMin);
+        const elapsed = Math.max(0, (now - start) / 60000);
         const slicesGone = Math.floor(elapsed);
         const slicesRemaining = Math.max(0, totalSlices - slicesGone);
 
@@ -1457,25 +1608,25 @@ class ClassProgressRenderer {
 class OverlayManager {
   constructor() {
     this.overlayEl = document.getElementById('overlay');
-    this.inlineEditBarEl = document.getElementById('inline-edit-bar');
     this._open = false;
-    this._mode = null; // 'time-entry' | 'inline-time' | 'competition' | 'training' | etc.
+    this._mode = null; // 'competition' | 'training' | 'training-*' | 'chainsaw-*' | 'schedule' | 'credits' | ...
     this._inputBuffer = '';
-    this._timeEntryStep = null; // 'minutes' | 'seconds'
-    this._timeEntryLabel = '';
-    this._timeEntryMinutes = 0;
-    this._timeEntryCallback = null;
     this._advancedCallback = null;
-    this._inlineTargetEl = null; // The timer element being edited inline
-    this._inlineOriginalValue = ''; // Original value to restore on cancel
     this._advancedConfig = null;
-    this._trainingMode = null; // 'pyramid' | 'ladder_up' | 'ladder_down'
+    this._trainingMode = null; // 'pyramid' | 'inv_pyramid' | 'ladder_up' | 'ladder_down'
     this._trainingRounds = 0;
     this._lastTrainingRestSec = 30;
     this._chainsawOddRoundSec = 0;
     this._chainsawOddRestSec = 0;
     this._chainsawEvenRoundSec = 0;
-    this._roundsEntryCurrentRounds = 0;
+    this._chainsawEvenRestSec = 0;
+    this._chainsawDefaultRounds = 0;
+    this._selIndex = 0; // Highlighted row in list-style overlays
+    this._durSec = 0; // Duration picker value (seconds)
+    this._durField = 'min'; // Duration picker: 'min' | 'sec'
+    this._mainMenuItems = null; // Set while navigating from the main menu (Menu = back)
+    // Supplies remaining seconds in the active class for preset defaults
+    this.remainingClassSecProvider = null;
   }
 
   /**
@@ -1493,177 +1644,30 @@ class OverlayManager {
     this._open = false;
     this._mode = null;
     this._inputBuffer = '';
-    this._timeEntryStep = null;
-    this._timeEntryLabel = '';
-    this._timeEntryMinutes = 0;
-    this._timeEntryCallback = null;
     this._advancedCallback = null;
     this._advancedConfig = null;
     this._trainingMode = null;
     this._trainingRounds = 0;
-    if (this._inlineTargetEl) {
-      this._inlineTargetEl.classList.remove('editing');
-      this._inlineTargetEl = null;
-    }
+    this._selIndex = 0;
+    this._mainMenuItems = null;
     if (this.overlayEl) {
       this.overlayEl.classList.remove('active');
       this.overlayEl.innerHTML = '';
     }
-    if (this.inlineEditBarEl) {
-      this.inlineEditBarEl.classList.remove('active');
-      this.inlineEditBarEl.innerHTML = '';
-    }
   }
 
   /**
-   * Two-step time entry modal: prompt for minutes first, then seconds.
-   * Validates numeric input with isNumeric(), shows error and re-prompts on invalid input.
-   * @param {string} label - Label for the time entry (e.g. "ROUND" or "REST")
-   * @param {function} callback - Called with (totalSeconds) when complete
+   * Display the main menu: one list that reaches every secondary screen so
+   * the remote only needs ring + OK + Menu.
+   * @param {Array<{id:string, name:string, note?:string|function, icon?:string, action:function, submenu?:boolean, toggle?:boolean}>} items
+   *   `toggle` items run their action and stay on the menu (note is re-read).
    */
-  showTimeEntry(label, callback, currentSec) {
+  showMainMenu(items) {
     this._open = true;
-    this._mode = 'time-entry';
-    this._timeEntryLabel = label;
-    this._timeEntryCallback = callback;
-    this._timeEntryCurrentSec = currentSec || 0;
-    this._inputBuffer = '';
-    this._renderTimeEntry('');
-  }
-
-  /**
-   * Inline time entry — edits the timer value in-place with a top instruction bar.
-   * @param {string} label - 'ROUND' or 'REST'
-   * @param {function} callback - Called with (totalSeconds) when confirmed
-   * @param {number} currentSec - Current value in seconds
-   * @param {HTMLElement} targetEl - The timer element to edit inline
-   */
-  showInlineTimeEntry(label, callback, currentSec, targetEl) {
-    this._open = true;
-    this._mode = 'inline-time';
-    this._timeEntryLabel = label;
-    this._timeEntryCallback = callback;
-    this._timeEntryCurrentSec = currentSec || 0;
-    this._inputBuffer = '';
-    this._inlineTargetEl = targetEl;
-    this._inlineOriginalValue = targetEl ? targetEl.textContent : '';
-    if (targetEl) targetEl.classList.add('editing');
-    this._renderInlineTimeEntry('');
-  }
-
-  /**
-   * Render the inline time entry instruction bar.
-   */
-  _renderInlineTimeEntry(errorMsg) {
-    if (!this.inlineEditBarEl) return;
-    const raw = this._inputBuffer;
-    let preview = '';
-    if (raw.length > 0 && isNumeric(raw)) {
-      if (raw.charAt(0) === '0') {
-        const sec = parseInt(raw.substring(1) || '0', 10);
-        preview = formatTime(sec);
-      } else {
-        const val = parseInt(raw, 10);
-        if (val < 60) {
-          preview = formatTime(val * 60);
-        } else {
-          const s = val % 100;
-          const m = Math.floor(val / 100);
-          preview = s <= 59 ? formatTime(m * 60 + s) : '';
-        }
-      }
-    }
-    if (!preview) {
-      preview = formatTime(this._timeEntryCurrentSec || 0);
-    }
-    // Update the timer element directly
-    if (this._inlineTargetEl) {
-      this._inlineTargetEl.textContent = preview;
-    }
-    // Show instruction bar
-    const errorHtml = errorMsg ? `<div class="edit-error">${errorMsg}</div>` : '';
-    this.inlineEditBarEl.innerHTML =
-      `<div>Editing ${this._timeEntryLabel} duration: <strong>${this._inputBuffer || '_'}</strong></div>` +
-      `<div class="edit-hint"><div style="padding:12px">"1" → 1:00 &nbsp;&nbsp; "12" → 12:00 &nbsp;&nbsp; "123" → 1:23 &nbsp;&nbsp; "1234" → 12:34 &nbsp;&nbsp; "030" → 0:30</div> <span class="key-badge">Enter</span> confirm &nbsp; <span class="key-badge">*</span> cancel</div>` +
-      errorHtml;
-    this.inlineEditBarEl.classList.add('active');
-  }
-
-  /**
-   * Handle key input for inline time entry.
-   */
-  _handleInlineTimeKey(key) {
-    if (key === 'Enter') {
-      this._confirmInlineTimeEntry();
-    } else if (key === '*' || key === 'Backspace') {
-      if (key === 'Backspace' && this._inputBuffer.length > 0) {
-        this._inputBuffer = this._inputBuffer.slice(0, -1);
-        this._renderInlineTimeEntry('');
-      } else if (key === '*') {
-        // Cancel — restore original value
-        if (this._inlineTargetEl) {
-          this._inlineTargetEl.textContent = this._inlineOriginalValue;
-          this._inlineTargetEl.classList.remove('editing');
-        }
-        this.closeOverlay();
-      }
-    } else if (isNumeric(key) && this._inputBuffer.length < 4) {
-      this._inputBuffer += key;
-      this._renderInlineTimeEntry('');
-    }
-  }
-
-  /**
-   * Confirm inline time entry.
-   */
-  _confirmInlineTimeEntry() {
-    const raw = this._inputBuffer;
-    if (!raw || !isNumeric(raw)) {
-      this._renderInlineTimeEntry('Enter a valid number');
-      return;
-    }
-    let totalSeconds;
-    if (raw.charAt(0) === '0') {
-      totalSeconds = parseInt(raw.substring(1) || '0', 10);
-    } else {
-      const val = parseInt(raw, 10);
-      if (val < 60) {
-        totalSeconds = val * 60;
-      } else {
-        const s = val % 100;
-        const m = Math.floor(val / 100);
-        if (s > 59) {
-          this._renderInlineTimeEntry('Invalid seconds (max 59)');
-          return;
-        }
-        totalSeconds = m * 60 + s;
-      }
-    }
-    if (totalSeconds < 1) {
-      this._renderInlineTimeEntry('Duration must be at least 1 second');
-      return;
-    }
-    if (this._inlineTargetEl) {
-      this._inlineTargetEl.classList.remove('editing');
-    }
-    if (this._timeEntryCallback) {
-      this._timeEntryCallback(totalSeconds);
-    }
-    this.closeOverlay();
-  }
-
-  /**
-   * Single-step rounds entry overlay.
-   * @param {number} currentRounds - Current numRounds value
-   * @param {function} callback - Called with (numRounds) when confirmed
-   */
-  showRoundsEntry(currentRounds, callback) {
-    this._open = true;
-    this._mode = 'rounds-entry';
-    this._inputBuffer = '';
-    this._roundsEntryCallback = callback;
-    this._roundsEntryCurrentRounds = currentRounds;
-    this._renderRoundsEntry('', currentRounds);
+    this._mode = 'main';
+    this._mainMenuItems = items;
+    this._selIndex = 0;
+    this._renderMainMenu();
   }
 
   /**
@@ -1676,6 +1680,7 @@ class OverlayManager {
     this._mode = 'competition';
     this._advancedConfig = config;
     this._advancedCallback = callback;
+    this._selIndex = 0;
     this._renderCompetitionMenu();
   }
 
@@ -1689,247 +1694,239 @@ class OverlayManager {
     this._mode = 'training';
     this._advancedConfig = config;
     this._advancedCallback = callback;
+    this._selIndex = 0;
     this._renderTrainingMenu();
   }
 
   /**
-   * Handle a numpad key press while the overlay is open.
+   * Display the credits / system screen.
+   */
+  showCredits() {
+    this._open = true;
+    this._mode = 'credits';
+    this._updateOrigin = 'credits';
+    this._renderCredits();
+  }
+
+  /**
+   * Ask before updating the app from the main menu. The highlight starts on
+   * "No" so a stray OK press never triggers a download.
+   */
+  showUpdateConfirm() {
+    this._open = true;
+    this._mode = 'confirm-app-update';
+    this._updateOrigin = 'main';
+    this._selIndex = 0;
+    this._renderUpdateConfirm();
+  }
+
+  /**
+   * Menu button: step back one level, or close when there is nowhere to go.
+   * @private
+   */
+  _back() {
+    const m = this._mode;
+    if (m === 'confirm-update' || (m === 'update-error' && this._updateOrigin !== 'main')) {
+      this._mode = 'credits';
+      this._renderCredits();
+      return;
+    }
+    if ((m && m.startsWith('training-')) || (m && m.startsWith('chainsaw-'))) {
+      // Keep the highlighted preset so Menu → OK re-enters the same one
+      this._mode = 'training';
+      this._inputBuffer = '';
+      this._renderTrainingMenu();
+      return;
+    }
+    if (m !== 'main' && this._mainMenuItems) {
+      const items = this._mainMenuItems;
+      this.showMainMenu(items);
+      return;
+    }
+    this.closeOverlay();
+  }
+
+  /**
+   * Handle a key press while the overlay is open.
    * Routes to the appropriate handler based on current mode.
-   * @param {string} key - The key value (e.g. '0'-'9', 'Enter', 'Backspace')
+   * @param {string} key - Normalized key ('0'-'9', 'Enter', 'Menu', 'ArrowUp', ...)
    */
   handleKey(key) {
     if (!this._open) return;
 
-    // Schedule overlay: +/- toggle, / refresh, any other key closes
+    const modal = this._mode === 'credits' || this._mode === 'updating' ||
+      this._mode === 'update-error' || this._mode === 'confirm-update' ||
+      this._mode === 'confirm-app-update';
+
+    if (this._mode === 'updating') return; // Ignore keys while updating
+
+    // Menu steps back everywhere (except while an update is in flight)
+    if (key === 'Menu') {
+      this._back();
+      return;
+    }
+
+    // Schedule overlay is view-only (the on/off toggle lives in the main menu);
+    // any key other than the ring goes back
     if (this._mode === 'schedule') {
-      if (key === '-') {
-        APP_SETTINGS.scheduleEnabled = false;
-        localStorage.setItem('bjj-timer-schedule-enabled', 'false');
-        if (this._onScheduleToggle) this._onScheduleToggle(false);
-        this._renderSchedule();
-        return;
-      }
-      if (key === '+') {
-        APP_SETTINGS.scheduleEnabled = true;
-        localStorage.setItem('bjj-timer-schedule-enabled', 'true');
-        if (this._onScheduleToggle) this._onScheduleToggle(true);
-        this._renderSchedule();
-        return;
-      }
-      if (key === '/') {
-        this.closeOverlay();
-        return;
-      }
+      if (key.startsWith('Arrow') || key === 'StepUp' || key === 'StepDown') return;
+      this._back();
+      return;
+    }
+
+    // Legacy numpad: * or / closes any overlay (except the credits/update
+    // screens, which handle their own keys, and training, where / opens credits)
+    if (key === '*' && !modal) {
+      this.closeOverlay();
+      return;
+    }
+    if (key === '/' && !modal && this._mode !== 'training') {
       this.closeOverlay();
       return;
     }
 
-    // * or / closes any overlay (except inline-time which handles * specially, and training which handles / for credits)
-    if (key === '*' && this._mode !== 'inline-time' && this._mode !== 'credits' && this._mode !== 'updating' && this._mode !== 'update-error' && this._mode !== 'confirm-update') {
-      this.closeOverlay();
-      return;
-    }
-    if (key === '/' && this._mode !== 'inline-time' && this._mode !== 'training' && this._mode !== 'credits' && this._mode !== 'updating' && this._mode !== 'update-error' && this._mode !== 'confirm-update') {
-      this.closeOverlay();
-      return;
-    }
-
-    if (this._mode === 'inline-time') {
-      this._handleInlineTimeKey(key);
-    } else if (this._mode === 'time-entry') {
-      this._handleTimeEntryKey(key);
-    } else if (this._mode === 'rounds-entry') {
-      this._handleRoundsEntryKey(key);
+    if (this._mode === 'main') {
+      this._handleMainMenuKey(key);
     } else if (this._mode === 'competition') {
       this._handleCompetitionKey(key);
     } else if (this._mode === 'training') {
       this._handleTrainingKey(key);
-    } else if (this._mode === 'advanced-sub') {
-      this._handleAdvancedSubKey(key);
     } else if (this._mode === 'training-minutes' || this._mode === 'training-rounds' || this._mode === 'training-rest') {
       this._handleTrainingSubKey(key);
     } else if (this._mode && this._mode.startsWith('chainsaw-')) {
       this._handleChainsawKey(key);
     } else if (this._mode === 'credits') {
-      if (key === '*') {
+      if (key === '*' || key === 'ArrowRight') {
+        // Hidden system menu: press * (or ring Right) twice
         this._creditsStarCount = (this._creditsStarCount || 0) + 1;
         if (this._creditsStarCount >= 2) {
           this._creditsStarCount = 0;
           this._mode = 'confirm-update';
+          this._selIndex = 0;
           this._renderConfirmUpdate();
         }
+      } else if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'StepUp' || key === 'StepDown') {
+        this._creditsStarCount = 0;
       } else {
         this._creditsStarCount = 0;
-        this.closeOverlay();
+        this._back();
       }
     } else if (this._mode === 'confirm-update') {
-      if (key === '1') {
+      if (key === 'ArrowUp' || key === 'ArrowDown') {
+        this._selIndex = moveSelection(this._selIndex, key === 'ArrowUp' ? -1 : 1, 2);
+        this._renderConfirmUpdate();
+      } else if (key === '1' || (key === 'Enter' && this._selIndex === 0)) {
         this._performUpdate('/update', 'Downloading latest code from Git');
-      } else if (key === '2') {
+      } else if (key === '2' || (key === 'Enter' && this._selIndex === 1)) {
         this._performUpdate('/sync-schedule', 'Syncing class schedule');
       } else {
         this._mode = 'credits';
         this._renderCredits();
       }
-    } else if (this._mode === 'updating') {
-      // Ignore keys while updating
+    } else if (this._mode === 'confirm-app-update') {
+      if (key === 'ArrowUp' || key === 'ArrowDown') {
+        this._selIndex = moveSelection(this._selIndex, key === 'ArrowUp' ? -1 : 1, 2);
+        this._renderUpdateConfirm();
+      } else if (key === '2' || (key === 'Enter' && this._selIndex === 1)) {
+        this._performUpdate('/update', 'Downloading latest code from Git');
+      } else if (key === '1' || key === 'Enter') {
+        this._back(); // "No"
+      }
     } else if (this._mode === 'update-error') {
-      // Any key goes back to credits
-      this._mode = 'credits';
-      this._renderCredits();
+      // Any key goes back to where the update was started from
+      this._back();
     }
   }
 
-  // --- Time Entry internals ---
+  // --- Main menu internals ---
 
-  _handleTimeEntryKey(key) {
-    if (key === 'Enter') {
-      this._confirmTimeEntry();
-    } else if (key === 'Clear') {
-      this._inputBuffer = '';
-      this._renderTimeEntry('');
-    } else if (key === 'Backspace') {
-      this._inputBuffer = this._inputBuffer.slice(0, -1);
-      this._renderTimeEntry('');
-    } else if (key >= '0' && key <= '9') {
-      this._inputBuffer += key;
-      this._renderTimeEntry('');
+  _handleMainMenuKey(key) {
+    const items = this._mainMenuItems || [];
+    if (key === 'ArrowUp' || key === 'ArrowDown') {
+      this._selIndex = moveSelection(this._selIndex, key === 'ArrowUp' ? -1 : 1, items.length);
+      this._renderMainMenu();
+      return;
     }
+    let index = -1;
+    if (key === 'Enter') index = this._selIndex;
+    else if (key >= '1' && key <= '9') index = parseInt(key, 10) - 1;
+    const item = items[index];
+    if (!item) return;
+    if (item.toggle) {
+      // In-place setting: run the action and redraw so the note shows the new state
+      item.action();
+      this._renderMainMenu();
+      return;
+    }
+    if (!item.submenu) this.closeOverlay();
+    item.action();
   }
 
   /**
-   * Parse the input buffer into total seconds using quick-entry rules:
-   * - Starts with '0': rest is seconds (e.g. "045" → 45s)
-   * - Value < 60: pure minutes (e.g. "5" → 5:00)
-   * - Value >= 60: last 2 digits = seconds, left digits = minutes (e.g. "530" → 5:30)
+   * Flip the weekly-schedule features, persist it, and notify the listener.
+   * @returns {boolean} the new enabled state
    */
-  _confirmTimeEntry() {
-    const raw = this._inputBuffer;
-
-    if (!isNumeric(raw) || raw === '') {
-      this._renderTimeEntry('Enter a number');
-      this._inputBuffer = '';
-      return;
+  toggleSchedule() {
+    const enabled = !APP_SETTINGS.scheduleEnabled;
+    APP_SETTINGS.scheduleEnabled = enabled;
+    try {
+      localStorage.setItem('bjj-timer-schedule-enabled', String(enabled));
+    } catch (e) {
+      // localStorage unavailable — setting applies for this session only
     }
-
-    let totalSeconds;
-
-    if (raw.charAt(0) === '0') {
-      // Seconds-only mode: everything after the leading 0
-      const secStr = raw.substring(1) || '0';
-      totalSeconds = parseInt(secStr, 10);
-    } else {
-      const value = parseInt(raw, 10);
-      if (value < 60) {
-        // Pure minutes
-        totalSeconds = value * 60;
-      } else {
-        // Last two digits are seconds, rest is minutes
-        const seconds = value % 100;
-        const minutes = Math.floor(value / 100);
-        if (seconds > 59) {
-          this._renderTimeEntry('Seconds part must be 0-59');
-          this._inputBuffer = '';
-          return;
-        }
-        totalSeconds = minutes * 60 + seconds;
-      }
-    }
-
-    const cb = this._timeEntryCallback;
-    this.closeOverlay();
-    if (cb) cb(totalSeconds);
+    if (this._onScheduleToggle) this._onScheduleToggle(enabled);
+    return enabled;
   }
 
-  _renderTimeEntry(errorMsg) {
+  /**
+   * Flip the holiday decorations theme, persist it, and notify the listener.
+   * @returns {boolean} the new enabled state
+   */
+  toggleHolidayTheme() {
+    const enabled = !APP_SETTINGS.holidayThemeEnabled;
+    APP_SETTINGS.holidayThemeEnabled = enabled;
+    try {
+      localStorage.setItem('bjj-timer-holiday-theme', String(enabled));
+    } catch (e) {
+      // localStorage unavailable — setting applies for this session only
+    }
+    if (this._onHolidayToggle) this._onHolidayToggle(enabled);
+    return enabled;
+  }
+
+  _renderMainMenu() {
     if (!this.overlayEl) return;
-    // Show a live preview of what the input means — default to current configured time
-    const raw = this._inputBuffer;
-    let preview = '';
-    if (raw.length > 0 && isNumeric(raw)) {
-      if (raw.charAt(0) === '0') {
-        const sec = parseInt(raw.substring(1) || '0', 10);
-        preview = formatTime(sec);
-      } else {
-        const val = parseInt(raw, 10);
-        if (val < 60) {
-          preview = formatTime(val * 60);
-        } else {
-          const s = val % 100;
-          const m = Math.floor(val / 100);
-          preview = s <= 59 ? formatTime(m * 60 + s) : '';
-        }
-      }
-    }
-    if (!preview) {
-      preview = formatTime(this._timeEntryCurrentSec || 0);
-    }
-    const display = this._inputBuffer || '_';
+    const _s = 'width="1.5em" height="1.5em" viewBox="0 0 24 24" style="vertical-align:-0.2em;"';
+    const items = this._mainMenuItems || [];
+    let rows = '';
+    items.forEach((it, i) => {
+      const sel = i === this._selIndex ? ' mg-sel' : '';
+      const icon = it.icon && ICONS[it.icon] ? ICONS[it.icon](_s, '#aaa') : '';
+      const note = typeof it.note === 'function' ? it.note() : it.note;
+      rows += `<span class="mg-key${sel}">${i + 1}</span>` +
+              `<span class="mg-icon${sel}">${icon}</span>` +
+              `<span class="mg-name${sel}">${escapeHtml(it.name)}</span>` +
+              `<span class="mg-note mg-last${sel}">${note ? escapeHtml(note) : ''}</span>`;
+    });
     this.overlayEl.innerHTML =
-      `<div class="overlay-content">` +
-      `<div class="overlay-prompt">Enter ${this._timeEntryLabel} duration:</div>` +
-      `<div class="overlay-input">${display}</div>` +
-      `<div class="overlay-error">${errorMsg}</div>` +
-      `<div style="margin-top:1vh;font-size:clamp(2rem,5vw,5rem);color:var(--text-muted);text-align:center;">${preview}</div>` +
-      `<div class="overlay-hint">0XX = seconds · &lt;60 = minutes · 530 = 5:30</div>` +
-      `</div>` +
-      `<div style="position:absolute;bottom:2vh;right:3vw;color:var(--text-help);font-size:clamp(0.6rem,1.2vw,1.2rem);">* <svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg> Cancel</div>`;
-    this.overlayEl.classList.add('active');
-  }
-
-  // --- Rounds Entry internals ---
-
-  _handleRoundsEntryKey(key) {
-    if (key === 'Enter') {
-      const raw = this._inputBuffer;
-      if (!isNumeric(raw) || raw === '') {
-        this._renderRoundsEntry('Enter a number', this._roundsEntryCurrentRounds);
-        this._inputBuffer = '';
-        return;
-      }
-      const value = parseInt(raw, 10);
-      const cb = this._roundsEntryCallback;
-      this.closeOverlay();
-      if (cb) cb(value);
-    } else if (key === 'Clear') {
-      this._inputBuffer = '';
-      this._renderRoundsEntry('', this._roundsEntryCurrentRounds);
-    } else if (key === 'Backspace') {
-      this._inputBuffer = this._inputBuffer.slice(0, -1);
-      this._renderRoundsEntry('', this._roundsEntryCurrentRounds);
-    } else if (key >= '0' && key <= '9') {
-      this._inputBuffer += key;
-      this._renderRoundsEntry('', this._roundsEntryCurrentRounds);
-    }
-  }
-
-  _renderRoundsEntry(errorMsg, currentRounds) {
-    if (!this.overlayEl) return;
-    const display = this._inputBuffer || '_';
-    // Show default value preview when input is empty
-    let defaultPreview = '';
-    if (!this._inputBuffer && currentRounds !== undefined) {
-      const label = currentRounds === 0 ? '∞ repeat' : String(currentRounds);
-      defaultPreview = `<div style="margin-top:1vh;font-size:clamp(1.5rem,4vw,4rem);color:var(--text-muted);text-align:center;">${label}</div>`;
-    }
-    this.overlayEl.innerHTML =
-      `<div class="overlay-content">` +
-      `<div class="overlay-prompt">Number of rounds (0 = repeat):</div>` +
-      `<div class="overlay-input">${display}</div>` +
-      defaultPreview +
-      `<div class="overlay-error">${errorMsg}</div>` +
-      `<div class="overlay-hint">Type digits, then press Enter</div>` +
-      `</div>` +
-      `<div style="position:absolute;bottom:2vh;right:3vw;color:var(--text-help);font-size:clamp(0.6rem,1.2vw,1.2rem);">* <svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg> Cancel</div>`;
+      `<div class="advanced-menu overlay-content">` +
+        `<div class="menu-title">Menu</div>` +
+        `<div class="menu-grid">${rows}</div>` +
+      `</div>`;
     this.overlayEl.classList.add('active');
   }
 
   // --- Advanced Menu internals ---
 
   _handleCompetitionKey(key) {
-    const presetIndex = parseInt(key, 10);
-    if (isNaN(presetIndex)) return;
     const presetNames = Object.keys(APP_SETTINGS.competitionPresets);
+    if (key === 'ArrowUp' || key === 'ArrowDown') {
+      this._selIndex = moveSelection(this._selIndex, key === 'ArrowUp' ? -1 : 1, presetNames.length);
+      this._renderCompetitionMenu();
+      return;
+    }
+    const presetIndex = key === 'Enter' ? this._selIndex : parseInt(key, 10);
+    if (isNaN(presetIndex)) return;
     if (presetIndex >= 0 && presetIndex < presetNames.length) {
       const name = presetNames[presetIndex];
       const preset = APP_SETTINGS.competitionPresets[name];
@@ -1938,6 +1935,12 @@ class OverlayManager {
   }
 
   _handleTrainingKey(key) {
+    if (key === 'ArrowUp' || key === 'ArrowDown') {
+      this._selIndex = moveSelection(this._selIndex, key === 'ArrowUp' ? -1 : 1, TRAINING_MENU_ITEMS.length);
+      this._renderTrainingMenu();
+      return;
+    }
+    if (key === 'Enter') key = TRAINING_MENU_ITEMS[this._selIndex].key;
     switch (key) {
       case '0':
         this._startChainsaw();
@@ -1983,53 +1986,6 @@ class OverlayManager {
     if (cb) cb(cfg);
   }
 
-  _startAdvancedSubEntry(prompt, onConfirm) {
-    this._mode = 'advanced-sub';
-    this._inputBuffer = '';
-    this._advancedSubPrompt = prompt;
-    this._advancedSubCallback = onConfirm;
-    this._renderAdvancedSubEntry('');
-  }
-
-  _renderAdvancedSubEntry(errorMsg) {
-    if (!this.overlayEl) return;
-    const display = this._inputBuffer || '_';
-    this.overlayEl.innerHTML =
-      `<div class="overlay-content">` +
-      `<div class="overlay-prompt">${this._advancedSubPrompt}</div>` +
-      `<div class="overlay-input">${display}</div>` +
-      `<div class="overlay-error">${errorMsg}</div>` +
-      `<div class="overlay-hint">Type digits, then press Enter to confirm</div>` +
-      `</div>` +
-      `<div style="position:absolute;bottom:2vh;right:3vw;color:var(--text-help);font-size:clamp(0.6rem,1.2vw,1.2rem);">* <svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg> Cancel</div>`;
-    this.overlayEl.classList.add('active');
-  }
-
-  _handleAdvancedSubKey(key) {
-    if (key === 'Enter') {
-      const raw = this._inputBuffer;
-      if (!isNumeric(raw) || raw === '') {
-        this._renderAdvancedSubEntry('Please enter a number');
-        this._inputBuffer = '';
-        return;
-      }
-      const value = parseInt(raw, 10);
-      const cb = this._advancedSubCallback;
-      this._mode = 'advanced';
-      this._inputBuffer = '';
-      if (cb) cb(value);
-    } else if (key === 'Clear') {
-      this._inputBuffer = '';
-      this._renderAdvancedSubEntry('');
-    } else if (key === 'Backspace') {
-      this._inputBuffer = this._inputBuffer.slice(0, -1);
-      this._renderAdvancedSubEntry('');
-    } else if (key >= '0' && key <= '9') {
-      this._inputBuffer += key;
-      this._renderAdvancedSubEntry('');
-    }
-  }
-
   // --- Training Preset internals ---
 
   _startTrainingPreset(mode) {
@@ -2038,26 +1994,37 @@ class OverlayManager {
     // Calculate default minutes from remaining class time (nearest multiple of 5, rounded down)
     const remainingSec = this._getRemainingClassSec();
     this._trainingDefaultMinutes = remainingSec > 0 ? Math.floor(remainingSec / 60 / 5) * 5 : 0;
+    if (this._trainingDefaultMinutes <= 0) this._trainingDefaultMinutes = TRAINING_DEFAULT_MINUTES;
     this._mode = 'training-minutes';
     this._inputBuffer = '';
-    const defaultHint = this._trainingDefaultMinutes > 0 ? ` (default ${this._trainingDefaultMinutes})` : '';
-    this._renderTrainingSubEntry(`Total minutes${defaultHint}:`, '');
+    this._renderTrainingSubEntry('Total minutes:', '');
   }
 
   _handleTrainingSubKey(key) {
+    // Rest is a duration: the MM:SS picker handles ◀▶ / ▲▼
+    if (this._mode === 'training-rest' && this._handleDurationKey(key)) {
+      this._renderTrainingSubEntry(this._trainingPrompt(), '');
+      return;
+    }
     if (key === 'Enter') {
       const raw = this._inputBuffer;
       // Allow empty input on minutes step to accept default
-      if (this._mode === 'training-minutes' && raw === '' && this._trainingDefaultMinutes > 0) {
+      if (this._mode === 'training-minutes' && raw === '') {
         this._trainingTotalMinutes = this._trainingDefaultMinutes;
         this._mode = 'training-rounds';
         this._inputBuffer = '';
         this._renderTrainingSubEntry('How many rounds?', '');
         return;
       }
-      // Allow empty input on rest step to accept default
-      if (this._mode === 'training-rest' && raw === '') {
-        this._finishTrainingPreset(this._lastTrainingRestSec);
+      if (this._mode === 'training-rest') {
+        this._lastTrainingRestSec = this._durSec;
+        this._finishTrainingPreset(this._durSec);
+        return;
+      }
+      // Allow empty input on rounds step to accept the default (remote: OK, OK)
+      if (this._mode === 'training-rounds' && raw === '') {
+        this._trainingRounds = TRAINING_DEFAULT_ROUNDS;
+        this._enterTrainingRest();
         return;
       }
       if (!isNumeric(raw) || raw === '') {
@@ -2084,12 +2051,7 @@ class OverlayManager {
           return;
         }
         this._trainingRounds = value;
-        this._mode = 'training-rest';
-        this._inputBuffer = '';
-        this._renderTrainingSubEntry(`Rest between rounds (seconds, default ${this._lastTrainingRestSec}):`, '');
-      } else if (this._mode === 'training-rest') {
-        this._lastTrainingRestSec = value;
-        this._finishTrainingPreset(value);
+        this._enterTrainingRest();
       }
     } else if (key === 'Clear') {
       this._inputBuffer = '';
@@ -2097,64 +2059,134 @@ class OverlayManager {
     } else if (key === 'Backspace') {
       this._inputBuffer = this._inputBuffer.slice(0, -1);
       this._renderTrainingSubEntry(this._trainingPrompt(), '');
+    } else if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'StepUp' || key === 'StepDown') {
+      // Ring steps the value; hold (StepUp/StepDown) takes bigger steps
+      const dir = key === 'ArrowUp' || key === 'StepUp' ? 1 : -1;
+      const big = key === 'StepUp' || key === 'StepDown';
+      let base, step, min;
+      if (this._mode === 'training-minutes') { base = this._trainingDefaultMinutes || TRAINING_DEFAULT_MINUTES; step = big ? 5 : 1; min = 1; }
+      else { base = TRAINING_DEFAULT_ROUNDS; step = big ? 5 : 1; min = 2; }
+      this._inputBuffer = stepNumericBuffer(this._inputBuffer, base, dir * step, min);
+      this._renderTrainingSubEntry(this._trainingPrompt(), '');
     } else if (key >= '0' && key <= '9') {
       this._inputBuffer += key;
       this._renderTrainingSubEntry(this._trainingPrompt(), '');
     }
   }
 
-  _renderTrainingSubEntry(prompt, errorMsg) {
-    if (!this.overlayEl) return;
-    const modeLabel = this._trainingMode === 'pyramid' ? 'Pyramid' :
-                      this._trainingMode === 'inv_pyramid' ? 'Inv. Pyramid' :
-                      this._trainingMode === 'ladder_up' ? 'Ladder Up' : 'Ladder Down';
-    const _s = 'width="1.5em" height="1.5em" viewBox="0 0 24 24" style="vertical-align:-0.25em;margin-right:0.4em;"';
-    let icon = '';
-    if (this._trainingMode === 'pyramid') {
-      icon = `<svg ${_s} fill="currentColor"><rect x="1" y="16" width="3" height="6" rx="0.5"/><rect x="5.5" y="11" width="3" height="11" rx="0.5"/><rect x="10" y="5" width="3" height="17" rx="0.5"/><rect x="14.5" y="11" width="3" height="11" rx="0.5"/><rect x="19" y="16" width="3" height="6" rx="0.5"/></svg>`;
-    } else if (this._trainingMode === 'inv_pyramid') {
-      icon = `<svg ${_s} fill="currentColor"><rect x="1" y="5" width="3" height="17" rx="0.5"/><rect x="5.5" y="11" width="3" height="11" rx="0.5"/><rect x="10" y="16" width="3" height="6" rx="0.5"/><rect x="14.5" y="11" width="3" height="11" rx="0.5"/><rect x="19" y="5" width="3" height="17" rx="0.5"/></svg>`;
-    } else if (this._trainingMode === 'ladder_up') {
-      icon = `<svg ${_s} fill="currentColor"><rect x="2" y="18" width="3" height="4" rx="0.5"/><rect x="7" y="14" width="3" height="8" rx="0.5"/><rect x="12" y="9" width="3" height="13" rx="0.5"/><rect x="17" y="4" width="3" height="18" rx="0.5"/></svg>`;
-    } else {
-      icon = `<svg ${_s} fill="currentColor"><rect x="2" y="4" width="3" height="18" rx="0.5"/><rect x="7" y="9" width="3" height="13" rx="0.5"/><rect x="12" y="14" width="3" height="8" rx="0.5"/><rect x="17" y="18" width="3" height="4" rx="0.5"/></svg>`;
+  _enterTrainingRest() {
+    this._mode = 'training-rest';
+    this._inputBuffer = '';
+    this._startDuration(this._lastTrainingRestSec);
+    this._renderTrainingSubEntry(this._trainingPrompt(), '');
+  }
+
+  // --- Duration picker (shared by every MM:SS prompt) ---
+
+  /**
+   * Begin editing a duration with the same control as the main page:
+   * ◀▶ pick minutes or seconds, ▲▼ adjust (minutes ±1, seconds ±5),
+   * held ring ×5 / ×3. The selected group blinks like time-setting mode.
+   * @param {number} sec - Starting value
+   */
+  _startDuration(sec) {
+    this._durSec = Math.max(0, sec | 0);
+    this._durField = 'min';
+  }
+
+  /**
+   * Handle a navigation / adjustment key for the duration picker.
+   * @returns {boolean} true when the key was consumed (caller re-renders)
+   */
+  _handleDurationKey(key) {
+    if (key === 'ArrowLeft' || key === 'ArrowRight') {
+      this._durField = this._durField === 'min' ? 'sec' : 'min';
+      return true;
     }
-    const display = this._inputBuffer || '_';
-    // Show default value preview when input is empty
-    let defaultPreview = '';
-    if (!this._inputBuffer) {
-      if (this._mode === 'training-minutes' && this._trainingDefaultMinutes > 0) {
-        defaultPreview = `<div style="margin-top:1vh;font-size:clamp(1.5rem,4vw,4rem);color:var(--text-muted);text-align:center;">${this._trainingDefaultMinutes}m</div>`;
-      } else if (this._mode === 'training-rest') {
-        defaultPreview = `<div style="margin-top:1vh;font-size:clamp(1.5rem,4vw,4rem);color:var(--text-muted);text-align:center;">${formatTime(this._lastTrainingRestSec)}</div>`;
+    if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'StepUp' || key === 'StepDown' || key === '+' || key === '-') {
+      const dir = key === 'ArrowUp' || key === 'StepUp' || key === '+' ? 1 : -1;
+      const big = key === 'StepUp' || key === 'StepDown';
+      let mins = Math.floor(this._durSec / 60);
+      let secs = this._durSec % 60;
+      if (this._durField === 'min') {
+        mins = Math.min(30, Math.max(0, mins + dir * (big ? 5 : 1)));
+      } else {
+        secs = (((secs + dir * (big ? 15 : 5)) % 60) + 60) % 60; // wraps 55 → 0 → 55
       }
+      this._durSec = mins * 60 + secs;
+      return true;
     }
+    return false;
+  }
+
+  /**
+   * Render the duration picker, styled like the main round / rest box.
+   * @param {'round'|'rest'} kind
+   */
+  _renderDurationControl(kind) {
+    const mins = String(Math.floor(this._durSec / 60)).padStart(2, '0');
+    const secs = String(this._durSec % 60).padStart(2, '0');
+    return `<div class="overlay-duration dur-${kind} time-setting-${this._durField === 'min' ? 'minutes' : 'seconds'}">` +
+      `<span class="ts-minutes">${mins}</span>:<span class="ts-seconds">${secs}</span></div>`;
+  }
+
+  /**
+   * Shared wizard frame: fixed-size box, title, prompt, body, error, hint.
+   */
+  _renderWizard(titleHtml, prompt, bodyHtml, errorMsg) {
+    if (!this.overlayEl) return;
     this.overlayEl.innerHTML =
-      `<div class="overlay-content">` +
-      `<div style="font-size:clamp(2rem,5vw,5rem);color:var(--text-primary);margin-bottom:1vh;">${icon}${modeLabel}</div>` +
+      `<div class="overlay-content overlay-wizard">` +
+      `<div class="overlay-wizard-title">${titleHtml}</div>` +
       `<div class="overlay-prompt">${prompt}</div>` +
-      `<div class="overlay-input">${display}</div>` +
-      defaultPreview +
+      `<div class="overlay-wizard-body">${bodyHtml}</div>` +
       `<div class="overlay-error">${errorMsg}</div>` +
-      `<div class="overlay-hint">Type digits, then press Enter to confirm</div>` +
-      `</div>` +
-      `<div style="position:absolute;bottom:2vh;right:3vw;color:var(--text-help);font-size:clamp(0.6rem,1.2vw,1.2rem);">* <svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg> Cancel</div>`;
+      `</div>`;
     this.overlayEl.classList.add('active');
   }
 
-  _trainingPrompt() {
-    if (this._mode === 'training-minutes') {
-      const defaultHint = this._trainingDefaultMinutes > 0 ? ` (default ${this._trainingDefaultMinutes})` : '';
-      return `Total minutes${defaultHint}:`;
+  /** Big numeric display for counts (minutes total, rounds). */
+  _renderNumberControl(display, dim) {
+    return `<div class="overlay-input${dim ? ' overlay-input-dim' : ''}">${display}</div>`;
+  }
+
+  _renderTrainingSubEntry(prompt, errorMsg) {
+    if (!this.overlayEl) return;
+    const mode = TRAINING_MODES[this._trainingMode] || TRAINING_MODES.ladder_down;
+    const _s = 'width="1.5em" height="1.5em" viewBox="0 0 24 24" style="vertical-align:-0.25em;margin-right:0.4em;"';
+    const title = `${ICONS[mode.icon](_s)}${mode.label}`;
+    if (this._mode === 'training-rest') {
+      this._renderWizard(title, prompt, this._renderDurationControl('rest'), errorMsg);
+      return;
     }
+    // Empty input shows the value OK would accept, dimmed
+    let display = this._inputBuffer;
+    let dim = false;
+    if (!display) {
+      dim = true;
+      if (this._mode === 'training-minutes') display = String(this._trainingDefaultMinutes || TRAINING_DEFAULT_MINUTES);
+      else display = String(TRAINING_DEFAULT_ROUNDS);
+    }
+    this._renderWizard(title, prompt, this._renderNumberControl(display, dim), errorMsg);
+  }
+
+  _trainingPrompt() {
+    if (this._mode === 'training-minutes') return 'Total minutes:';
     if (this._mode === 'training-rounds') return 'How many rounds?';
-    return `Rest between rounds (seconds, default ${this._lastTrainingRestSec}):`;
+    return 'Rest between rounds:';
   }
 
   _finishTrainingPreset(restSec) {
     const availableSec = this._trainingTotalMinutes * 60;
 
     const totalRestSec = (this._trainingRounds - 1) * restSec;
+    // Rounds snap to a 30s minimum each — if rest eats the budget the plan would
+    // silently exceed the requested total, so reject and re-prompt instead.
+    if (availableSec - totalRestSec < this._trainingRounds * 30) {
+      this._renderTrainingSubEntry(this._trainingPrompt(), 'Rest too long — leaves no time for rounds');
+      this._inputBuffer = '';
+      return;
+    }
     const totalTrainingSec = Math.max(availableSec - totalRestSec, this._trainingRounds); // at least 1s per round
 
     const durations = generateRoundDurations(this._trainingMode, this._trainingRounds, totalTrainingSec);
@@ -2164,9 +2196,7 @@ class OverlayManager {
     cfg.restDurationSec = restSec;
     cfg.numRounds = this._trainingRounds;
     cfg.roundDurations = durations;
-    cfg.presetName = this._trainingMode === 'pyramid' ? 'Pyramid' :
-                     this._trainingMode === 'inv_pyramid' ? 'Inv. Pyramid' :
-                     this._trainingMode === 'ladder_up' ? 'Ladder Up' : 'Ladder Down';
+    cfg.presetName = (TRAINING_MODES[this._trainingMode] || TRAINING_MODES.ladder_down).label;
 
     const cb = this._advancedCallback;
     this.closeOverlay();
@@ -2183,25 +2213,53 @@ class OverlayManager {
     this._chainsawEvenRoundSec = 0;
     this._chainsawEvenRestSec = 0;
     this._chainsawDefaultRounds = 0;
-    this._renderChainsawEntry('Odd round duration:', '');
+    this._startDuration(CHAINSAW_DEFAULT_ROUND_SEC);
+    this._renderChainsawEntry(this._chainsawPrompt(), '');
+  }
+
+  _chainsawIsDurationStep() {
+    return this._mode === 'chainsaw-odd-round' || this._mode === 'chainsaw-odd-rest' ||
+      this._mode === 'chainsaw-even-round' || this._mode === 'chainsaw-even-rest';
   }
 
   _handleChainsawKey(key) {
-    if (key === 'Enter') {
-      const raw = this._inputBuffer;
-      // Allow empty input on even rest step to accept default
-      if (this._mode === 'chainsaw-even-rest' && raw === '') {
-        this._chainsawEvenRestSec = this._chainsawOddRestSec;
-        this._chainsawDefaultRounds = this._calcChainsawDefaultRounds();
-        this._mode = 'chainsaw-rounds';
-        this._inputBuffer = '';
-        const defaultHint = this._chainsawDefaultRounds > 0 ? ` (default ${this._chainsawDefaultRounds})` : '';
-        this._renderChainsawEntry(`How many rounds${defaultHint}:`, '');
+    if (this._chainsawIsDurationStep()) {
+      if (this._handleDurationKey(key)) {
+        this._renderChainsawEntry(this._chainsawPrompt(), '');
         return;
       }
-      // Allow empty input on rounds step to accept default
-      if (this._mode === 'chainsaw-rounds' && raw === '' && this._chainsawDefaultRounds > 0) {
-        this._finishChainsaw(this._chainsawEvenRestSec, this._chainsawDefaultRounds);
+      if (key !== 'Enter') return;
+      const sec = this._durSec;
+      if (this._mode === 'chainsaw-odd-round') {
+        if (sec === 0) { this._renderChainsawEntry(this._chainsawPrompt(), 'Round needs a duration'); return; }
+        this._chainsawOddRoundSec = sec;
+        this._mode = 'chainsaw-odd-rest';
+        this._startDuration(CHAINSAW_DEFAULT_REST_SEC);
+      } else if (this._mode === 'chainsaw-odd-rest') {
+        this._chainsawOddRestSec = sec;
+        this._mode = 'chainsaw-even-round';
+        this._startDuration(this._chainsawOddRoundSec); // even round starts from odd round
+      } else if (this._mode === 'chainsaw-even-round') {
+        if (sec === 0) { this._renderChainsawEntry(this._chainsawPrompt(), 'Round needs a duration'); return; }
+        this._chainsawEvenRoundSec = sec;
+        this._mode = 'chainsaw-even-rest';
+        this._startDuration(this._chainsawOddRestSec); // even rest starts from odd rest
+      } else {
+        this._chainsawEvenRestSec = sec;
+        // Calculate default rounds from remaining class time
+        this._chainsawDefaultRounds = this._calcChainsawDefaultRounds() || TRAINING_DEFAULT_ROUNDS;
+        this._mode = 'chainsaw-rounds';
+        this._inputBuffer = '';
+      }
+      this._renderChainsawEntry(this._chainsawPrompt(), '');
+      return;
+    }
+
+    // Rounds step: a plain count
+    if (key === 'Enter') {
+      const raw = this._inputBuffer;
+      if (raw === '') {
+        this._finishChainsaw(this._chainsawEvenRestSec, this._chainsawDefaultRounds || TRAINING_DEFAULT_ROUNDS);
         return;
       }
       if (!isNumeric(raw) || raw === '') {
@@ -2209,52 +2267,23 @@ class OverlayManager {
         this._inputBuffer = '';
         return;
       }
-      const totalSeconds = this._parseChainsawTime(raw);
-      if (totalSeconds === null) {
-        this._renderChainsawEntry(this._chainsawPrompt(), 'Seconds part must be 0-59');
+      const rounds = parseInt(raw, 10);
+      if (rounds < 1) {
+        this._renderChainsawEntry(this._chainsawPrompt(), 'Need at least 1 round');
         this._inputBuffer = '';
         return;
       }
-
-      if (this._mode === 'chainsaw-odd-round') {
-        this._chainsawOddRoundSec = totalSeconds;
-        this._mode = 'chainsaw-odd-rest';
-        this._inputBuffer = '';
-        this._renderChainsawEntry('Odd round rest (seconds):', '');
-      } else if (this._mode === 'chainsaw-odd-rest') {
-        this._chainsawOddRestSec = totalSeconds;
-        this._mode = 'chainsaw-even-round';
-        this._inputBuffer = '';
-        this._renderChainsawEntry('Even round duration:', '');
-      } else if (this._mode === 'chainsaw-even-round') {
-        this._chainsawEvenRoundSec = totalSeconds;
-        this._mode = 'chainsaw-even-rest';
-        this._inputBuffer = '';
-        this._renderChainsawEntry(`Even round rest (seconds, default ${this._chainsawOddRestSec}):`, '');
-      } else if (this._mode === 'chainsaw-even-rest') {
-        // Default to odd rest if user enters 0
-        const restVal = totalSeconds === 0 ? this._chainsawOddRestSec : totalSeconds;
-        this._chainsawEvenRestSec = restVal;
-        // Calculate default rounds from remaining class time
-        this._chainsawDefaultRounds = this._calcChainsawDefaultRounds();
-        this._mode = 'chainsaw-rounds';
-        this._inputBuffer = '';
-        const defaultHint = this._chainsawDefaultRounds > 0 ? ` (default ${this._chainsawDefaultRounds})` : '';
-        this._renderChainsawEntry(`How many rounds${defaultHint}:`, '');
-      } else if (this._mode === 'chainsaw-rounds') {
-        const rounds = totalSeconds; // reusing totalSeconds as plain int here
-        if (rounds < 1) {
-          this._renderChainsawEntry(this._chainsawPrompt(), 'Need at least 1 round');
-          this._inputBuffer = '';
-          return;
-        }
-        this._finishChainsaw(this._chainsawEvenRestSec, rounds);
-      }
+      this._finishChainsaw(this._chainsawEvenRestSec, rounds);
     } else if (key === 'Clear') {
       this._inputBuffer = '';
       this._renderChainsawEntry(this._chainsawPrompt(), '');
     } else if (key === 'Backspace') {
       this._inputBuffer = this._inputBuffer.slice(0, -1);
+      this._renderChainsawEntry(this._chainsawPrompt(), '');
+    } else if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'StepUp' || key === 'StepDown') {
+      const dir = key === 'ArrowUp' || key === 'StepUp' ? 1 : -1;
+      const big = key === 'StepUp' || key === 'StepDown';
+      this._inputBuffer = stepNumericBuffer(this._inputBuffer, this._chainsawDefaultRounds || TRAINING_DEFAULT_ROUNDS, dir * (big ? 5 : 1), 1);
       this._renderChainsawEntry(this._chainsawPrompt(), '');
     } else if (key >= '0' && key <= '9') {
       this._inputBuffer += key;
@@ -2264,67 +2293,27 @@ class OverlayManager {
 
   _chainsawPrompt() {
     if (this._mode === 'chainsaw-odd-round') return 'Odd round duration:';
-    if (this._mode === 'chainsaw-odd-rest') return 'Odd round rest (seconds):';
+    if (this._mode === 'chainsaw-odd-rest') return 'Odd round rest:';
     if (this._mode === 'chainsaw-even-round') return 'Even round duration:';
-    if (this._mode === 'chainsaw-rounds') {
-      const defaultHint = this._chainsawDefaultRounds > 0 ? ` (default ${this._chainsawDefaultRounds})` : '';
-      return `How many rounds${defaultHint}:`;
-    }
-    return `Even round rest (seconds, default ${this._chainsawOddRestSec}):`;
-  }
-
-  _parseChainsawTime(raw) {
-    // For rest and rounds steps, treat as plain integer
-    if (this._mode === 'chainsaw-odd-rest' || this._mode === 'chainsaw-even-rest' || this._mode === 'chainsaw-rounds') {
-      return parseInt(raw, 10);
-    }
-    // For round time steps, use the same quick-entry rules as time entry
-    if (raw.charAt(0) === '0') {
-      return parseInt(raw.substring(1) || '0', 10);
-    }
-    const value = parseInt(raw, 10);
-    if (value < 60) return value * 60;
-    const seconds = value % 100;
-    const minutes = Math.floor(value / 100);
-    if (seconds > 59) return null;
-    return minutes * 60 + seconds;
+    if (this._mode === 'chainsaw-even-rest') return 'Even round rest:';
+    return 'How many rounds:';
   }
 
   _renderChainsawEntry(prompt, errorMsg) {
     if (!this.overlayEl) return;
-    const display = this._inputBuffer || '_';
-    // Show live preview for round time steps
-    let previewLine = '';
-    if ((this._mode === 'chainsaw-odd-round' || this._mode === 'chainsaw-even-round') && this._inputBuffer.length > 0 && isNumeric(this._inputBuffer)) {
-      const parsed = this._parseChainsawTime(this._inputBuffer);
-      if (parsed !== null) {
-        previewLine = `<div class="overlay-hint" style="margin-top:1vh;font-size:clamp(1.2rem,3vw,3rem);color:var(--text-muted);">= ${formatTime(parsed)}</div>`;
-      }
+    const title = ICONS.chainsaw('width="1.5em" height="1.5em" viewBox="0 0 24 24" style="vertical-align:-0.25em;margin-right:0.4em;"') + 'Chainsaw';
+    if (this._chainsawIsDurationStep()) {
+      const kind = this._mode === 'chainsaw-odd-round' || this._mode === 'chainsaw-even-round' ? 'round' : 'rest';
+      this._renderWizard(title, prompt, this._renderDurationControl(kind), errorMsg);
+      return;
     }
-    const isRoundStep = this._mode === 'chainsaw-odd-round' || this._mode === 'chainsaw-even-round';
-    const hint = isRoundStep ? '0XX = seconds · &lt;60 = minutes · 530 = 5:30' : 'Type digits, then press Enter';
-    // Show default value preview when input is empty
-    let defaultPreview = '';
-    if (!this._inputBuffer) {
-      if (this._mode === 'chainsaw-even-rest' && this._chainsawOddRestSec > 0) {
-        defaultPreview = `<div style="margin-top:1vh;font-size:clamp(1.5rem,4vw,4rem);color:var(--text-muted);text-align:center;">${formatTime(this._chainsawOddRestSec)}</div>`;
-      } else if (this._mode === 'chainsaw-rounds' && this._chainsawDefaultRounds > 0) {
-        defaultPreview = `<div style="margin-top:1vh;font-size:clamp(1.5rem,4vw,4rem);color:var(--text-muted);text-align:center;">${this._chainsawDefaultRounds}</div>`;
-      }
+    let display = this._inputBuffer;
+    let dim = false;
+    if (!display) {
+      dim = true;
+      display = String(this._chainsawDefaultRounds || TRAINING_DEFAULT_ROUNDS);
     }
-    const chainsawSvg = '<svg width="1.5em" height="1.5em" viewBox="0 0 24 24" style="vertical-align:-0.25em;margin-right:0.4em;" fill="currentColor"><rect x="2" y="14" width="3" height="8" rx="0.5"/><rect x="7" y="6" width="3" height="16" rx="0.5"/><rect x="12" y="14" width="3" height="8" rx="0.5"/><rect x="17" y="6" width="3" height="16" rx="0.5"/></svg>';
-    this.overlayEl.innerHTML =
-      `<div class="overlay-content">` +
-      `<div style="font-size:clamp(2rem,5vw,5rem);color:var(--text-primary);margin-bottom:1vh;">${chainsawSvg}Chainsaw</div>` +
-      `<div class="overlay-prompt">${prompt}</div>` +
-      `<div class="overlay-input">${display}</div>` +
-      defaultPreview +
-      `<div class="overlay-error">${errorMsg}</div>` +
-      previewLine +
-      `<div class="overlay-hint">${hint}</div>` +
-      `</div>` +
-      `<div style="position:absolute;bottom:2vh;right:3vw;color:var(--text-help);font-size:clamp(0.6rem,1.2vw,1.2rem);">* <svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg> Cancel</div>`;
-    this.overlayEl.classList.add('active');
+    this._renderWizard(title, prompt, this._renderNumberControl(display, dim), errorMsg);
   }
 
   _finishChainsaw(evenRestSec, numRounds) {
@@ -2353,14 +2342,9 @@ class OverlayManager {
    * Returns 0 if no active class.
    */
   _getRemainingClassSec() {
-    const scheduleEl = document.getElementById('schedule-display');
-    const classTimeEl = scheduleEl ? scheduleEl.querySelector('.class-time') : null;
-    if (!classTimeEl) return 0;
-    const text = classTimeEl.textContent;
-    const hMatch = text.match(/(\d+)h/);
-    const mMatch = text.match(/(\d+)m/);
-    if (!hMatch && !mMatch) return 0;
-    return ((hMatch ? parseInt(hMatch[1], 10) : 0) * 60 + (mMatch ? parseInt(mMatch[1], 10) : 0)) * 60;
+    if (typeof this.remainingClassSecProvider !== 'function') return 0;
+    const sec = this.remainingClassSecProvider();
+    return Number.isFinite(sec) && sec > 0 ? sec : 0;
   }
 
   /**
@@ -2382,7 +2366,6 @@ class OverlayManager {
       const isOdd = rounds % 2 === 0;
       const roundSec = isOdd ? this._chainsawOddRoundSec : this._chainsawEvenRoundSec;
       const restSec = isOdd ? this._chainsawOddRestSec : this._chainsawEvenRestSec;
-      const needed = roundSec + (rounds > 0 ? 0 : 0); // round time is always needed
       if (used + roundSec > availableSec) break;
       used += roundSec;
       rounds++;
@@ -2397,28 +2380,6 @@ class OverlayManager {
     if (!this.overlayEl) return;
 
     const _s = 'width="1.5em" height="1.5em" viewBox="0 0 24 24" style="vertical-align:-0.2em;"';
-
-    const beltIcon = (color) =>
-      `<svg ${_s} fill="none"><rect x="1" y="9" width="22" height="6" rx="1" fill="${color}" stroke="${color === '#ffffff' ? '#888' : color}" stroke-width="0.5"/><rect x="10" y="7" width="4" height="10" rx="1" fill="${color}" stroke="${color === '#ffffff' ? '#888' : 'rgba(0,0,0,0.3)'}" stroke-width="0.5"/><line x1="12" y1="17" x2="11" y2="21" stroke="${color === '#ffffff' ? '#888' : color}" stroke-width="1.5" stroke-linecap="round"/><line x1="12" y1="17" x2="13" y2="21" stroke="${color === '#ffffff' ? '#888' : color}" stroke-width="1.5" stroke-linecap="round"/></svg>`;
-
-    const kidsIcon =
-      `<svg ${_s} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><path d="M12 8v6"/><path d="M9 21l3-7 3 7"/><path d="M7 13l5 2 5-2"/></svg>`;
-
-    const beltColorMap = {
-      'white': '#ffffff', 'blue': '#1e90ff', 'purple': '#8b5cf6',
-      'brown': '#8B4513', 'black': '#333333'
-    };
-    const getBeltColor = (name) => {
-      const lower = name.toLowerCase();
-      if (lower.includes('white')) return beltColorMap['white'];
-      if (lower.includes('blue')) return beltColorMap['blue'];
-      if (lower.includes('purple')) return beltColorMap['purple'];
-      if (lower.includes('brown')) return beltColorMap['brown'];
-      if (lower.includes('black')) return beltColorMap['black'];
-      if (lower.includes('kid') || lower.includes('child') || lower.includes('youth')) return null;
-      return '#aaa';
-    };
-
     const presetNames = Object.keys(APP_SETTINGS.competitionPresets);
     let rows = '';
     // Header row
@@ -2427,24 +2388,19 @@ class OverlayManager {
             `<span class="mg-note" style="color:var(--text-rest);font-weight:700;">Rest</span>`;
     presetNames.forEach((name, i) => {
       const p = APP_SETTINGS.competitionPresets[name];
-      const roundStr = formatTime(p.roundDurationSec);
-      const restStr = formatTime(p.restDurationSec);
-      const color = getBeltColor(name);
-      const icon = color === null ? kidsIcon : beltIcon(color);
-      rows += `<span class="mg-key">${i}</span>` +
-              `<span class="mg-icon">${icon}</span>` +
-              `<span class="mg-name">${name}</span>` +
-              `<span class="mg-note" style="color:var(--text-round);">${roundStr}</span>` +
-              `<span class="mg-note" style="color:var(--text-rest);">${restStr}</span>`;
+      const icon = presetIcon(name, _s) || ICONS.belt(_s, '#aaa');
+      const sel = i === this._selIndex ? ' mg-sel' : '';
+      rows += `<span class="mg-key${sel}">${i}</span>` +
+              `<span class="mg-icon${sel}">${icon}</span>` +
+              `<span class="mg-name${sel}">${escapeHtml(name)}</span>` +
+              `<span class="mg-note${sel}" style="color:var(--text-round);">${formatTime(p.roundDurationSec)}</span>` +
+              `<span class="mg-note mg-last${sel}" style="color:var(--text-rest);">${formatTime(p.restDurationSec)}</span>`;
     });
-
-    const _arrow = '<svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg>';
 
     this.overlayEl.innerHTML =
       `<div class="advanced-menu overlay-content">` +
         `<div class="menu-title">Competition Presets</div>` +
         `<div class="menu-grid-5">${rows}</div>` +
-        `<div class="menu-close"></div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
   }
@@ -2453,45 +2409,19 @@ class OverlayManager {
     if (!this.overlayEl) return;
 
     const _s = 'width="1.5em" height="1.5em" viewBox="0 0 24 24" style="vertical-align:-0.2em;"';
-
-    const chainsawIcon =
-      `<svg ${_s} fill="currentColor"><rect x="2" y="14" width="3" height="8" rx="0.5"/><rect x="7" y="6" width="3" height="16" rx="0.5"/><rect x="12" y="14" width="3" height="8" rx="0.5"/><rect x="17" y="6" width="3" height="16" rx="0.5"/></svg>`;
-    const ladderUpIcon =
-      `<svg ${_s} fill="currentColor"><rect x="2" y="18" width="3" height="4" rx="0.5"/><rect x="7" y="14" width="3" height="8" rx="0.5"/><rect x="12" y="9" width="3" height="13" rx="0.5"/><rect x="17" y="4" width="3" height="18" rx="0.5"/></svg>`;
-    const ladderDownIcon =
-      `<svg ${_s} fill="currentColor"><rect x="2" y="4" width="3" height="18" rx="0.5"/><rect x="7" y="9" width="3" height="13" rx="0.5"/><rect x="12" y="14" width="3" height="8" rx="0.5"/><rect x="17" y="18" width="3" height="4" rx="0.5"/></svg>`;
-    const pyramidIcon =
-      `<svg ${_s} fill="currentColor"><rect x="1" y="16" width="3" height="6" rx="0.5"/><rect x="5.5" y="11" width="3" height="11" rx="0.5"/><rect x="10" y="5" width="3" height="17" rx="0.5"/><rect x="14.5" y="11" width="3" height="11" rx="0.5"/><rect x="19" y="16" width="3" height="6" rx="0.5"/></svg>`;
-    const invPyramidIcon =
-      `<svg ${_s} fill="currentColor"><rect x="1" y="5" width="3" height="17" rx="0.5"/><rect x="5.5" y="11" width="3" height="11" rx="0.5"/><rect x="10" y="16" width="3" height="6" rx="0.5"/><rect x="14.5" y="11" width="3" height="11" rx="0.5"/><rect x="19" y="5" width="3" height="17" rx="0.5"/></svg>`;
-    const tabataIcon =
-      `<svg ${_s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`;
-
-    const items = [
-      { key: '0', icon: chainsawIcon, name: 'Chainsaw', note: 'Alternating round/rest' },
-      { key: '1', icon: ladderUpIcon, name: 'Ladder Up', note: 'Short → long' },
-      { key: '2', icon: ladderDownIcon, name: 'Ladder Down', note: 'Long → short' },
-      { key: '3', icon: pyramidIcon, name: 'Pyramid', note: 'Short → long → short' },
-      { key: '4', icon: invPyramidIcon, name: 'Inv. Pyramid', note: 'Long → short → long' },
-      { key: '5', icon: tabataIcon, name: 'Tabata', note: '20s on / 10s off × 8' },
-      { key: '6', icon: `<svg ${_s} fill="currentColor"><rect x="1" y="6" width="9" height="16" rx="1" opacity="0.8"/><rect x="14" y="6" width="9" height="16" rx="1" opacity="0.8"/></svg>`, name: 'Dual Timer', note: 'Two independent timers' }
-    ];
-
     let rows = '';
-    items.forEach(it => {
-      rows += `<span class="mg-key">${it.key}</span>` +
-              `<span class="mg-icon">${it.icon}</span>` +
-              `<span class="mg-name">${it.name}</span>` +
-              `<span class="mg-note">${it.note}</span>`;
+    TRAINING_MENU_ITEMS.forEach((it, i) => {
+      const sel = i === this._selIndex ? ' mg-sel' : '';
+      rows += `<span class="mg-key${sel}">${it.key}</span>` +
+              `<span class="mg-icon${sel}">${ICONS[it.icon](_s)}</span>` +
+              `<span class="mg-name${sel}">${it.name}</span>` +
+              `<span class="mg-note mg-last${sel}">${it.note}</span>`;
     });
-
-    const _arrow = '<svg width="0.8em" height="0.8em" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.1em;margin:0 0.3em;"><path d="M4 2l4 4-4 4"/></svg>';
 
     this.overlayEl.innerHTML =
       `<div class="advanced-menu overlay-content">` +
         `<div class="menu-title">Training Presets</div>` +
         `<div class="menu-grid">${rows}</div>` +
-        `<div class="menu-close"></div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
   }
@@ -2502,29 +2432,28 @@ class OverlayManager {
     this.overlayEl.innerHTML =
       `<div class="overlay-content" style="text-align:center;">` +
         `<div style="margin-bottom:2vh;">` +
-          `<img src="paco.avif" alt="Paco" style="width:clamp(6rem,15vw,12rem);height:clamp(6rem,15vw,12rem);border-radius:50%;object-fit:cover;border:3px solid rgba(255,255,255,0.2);">` +
+          `<img src="paco.png" alt="Paco" style="width:clamp(6rem,15vw,12rem);height:clamp(6rem,15vw,12rem);border-radius:50%;object-fit:cover;border:3px solid rgba(255,255,255,0.2);">` +
         `</div>` +
         `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:3vh;">Credits</div>` +
         `<div style="font-size:clamp(1rem,2vw,2rem);color:var(--text-label);display:grid;grid-template-columns:auto 1fr;gap:0.8vh 1.5vw;text-align:left;">` +
-          `<span style="color:var(--accent-green);font-weight:700;">Claude</span><span>Code</span>` +
+          `<span style="color:var(--accent-green);font-weight:700;">Paco</span><span>The good parts</span>` +
           `<span style="color:var(--accent-green);font-weight:700;">Reevu</span><span>The hard parts</span>` +
-          `<span style="color:var(--accent-green);font-weight:700;">Vy</span><span>Innovation and free metrostar swag</span>` +
+          `<span style="color:var(--accent-green);font-weight:700;">Vy</span><span>The ugly parts</span>` +
         `</div>` +
-        `<div style="margin-top:3vh;font-size:clamp(0.8rem,1.5vw,1.5rem);color:var(--text-muted);">Press any key to close</div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
   }
 
   _renderConfirmUpdate() {
     if (!this.overlayEl) return;
+    const sel = (i) => i === this._selIndex ? ' mg-sel' : '';
     this.overlayEl.innerHTML =
-      `<div class="overlay-content" style="text-align:center;">` +
+      `<div class="advanced-menu overlay-content" style="text-align:center;">` +
         `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:3vh;">System Update</div>` +
-        `<div style="font-size:clamp(1rem,2vw,2rem);display:grid;grid-template-columns:auto 1fr;gap:1vh 1.5vw;text-align:left;margin-bottom:3vh;">` +
-          `<span style="color:var(--accent-green);font-weight:700;">1</span><span style="color:var(--text-label);">Download latest code from Git</span>` +
-          `<span style="color:var(--accent-green);font-weight:700;">2</span><span style="color:var(--text-label);">Sync class schedule</span>` +
+        `<div class="menu-grid" style="grid-template-columns:auto 1fr;margin-bottom:3vh;">` +
+          `<span class="mg-key${sel(0)}">1</span><span class="mg-name mg-last${sel(0)}">Download latest code from Git</span>` +
+          `<span class="mg-key${sel(1)}">2</span><span class="mg-name mg-last${sel(1)}">Sync class schedule</span>` +
         `</div>` +
-        `<div style="font-size:clamp(0.8rem,1.5vw,1.5rem);color:var(--text-muted);">Any other key to cancel</div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
   }
@@ -2534,6 +2463,21 @@ class OverlayManager {
    * @param {string} endpoint - '/update' or '/sync-schedule'
    * @param {string} description - Display text for the progress screen
    */
+  _renderUpdateConfirm() {
+    if (!this.overlayEl) return;
+    const sel = (i) => i === this._selIndex ? ' mg-sel' : '';
+    this.overlayEl.innerHTML =
+      `<div class="advanced-menu overlay-content" style="text-align:center;">` +
+        `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:1vh;">Update app?</div>` +
+        `<div style="font-size:clamp(0.9rem,1.8vw,1.8rem);color:var(--text-muted);margin-bottom:3vh;">Downloads the latest code from Git and reloads the timer</div>` +
+        `<div class="menu-grid" style="grid-template-columns:auto 1fr;margin-bottom:3vh;">` +
+          `<span class="mg-key${sel(0)}">1</span><span class="mg-name mg-last${sel(0)}">No</span>` +
+          `<span class="mg-key${sel(1)}">2</span><span class="mg-name mg-last${sel(1)}">Yes, update now</span>` +
+        `</div>` +
+      `</div>`;
+    this.overlayEl.classList.add('active');
+  }
+
   _performUpdate(endpoint, description) {
     if (!navigator.onLine) {
       this._showUpdateError('No WiFi — check your network connection');
@@ -2561,14 +2505,22 @@ class OverlayManager {
       document.head.appendChild(style);
     }
 
-    fetch(`http://localhost:3001${endpoint}`, { method: 'POST' })
+    // Abort if the server hangs — otherwise the 'updating' overlay swallows all
+    // keys forever and only a manual page reload recovers the kiosk.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    fetch(`http://localhost:3001${endpoint}`, {
+      method: 'POST',
+      headers: { 'X-Update-Request': APP_SETTINGS.relay.sharedKey },
+      signal: controller.signal
+    })
       .then(res => res.json())
       .then(data => {
         if (data.success) {
           this.overlayEl.innerHTML =
             `<div class="overlay-content" style="text-align:center;">` +
               `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--accent-green);margin-bottom:2vh;">✓ Updated</div>` +
-              `<div style="font-size:clamp(1rem,2vw,2rem);color:var(--text-muted);">${data.output || 'Success'}</div>` +
+              `<div style="font-size:clamp(1rem,2vw,2rem);color:var(--text-muted);">${escapeHtml(data.output || 'Success')}</div>` +
               `<div style="margin-top:2vh;font-size:clamp(1rem,2vw,2rem);color:var(--text-label);">Reloading...</div>` +
             `</div>`;
           setTimeout(() => window.location.reload(), 1500);
@@ -2577,8 +2529,9 @@ class OverlayManager {
         }
       })
       .catch(err => {
-        this._showUpdateError(err.message || 'Connection failed');
-      });
+        this._showUpdateError(err.name === 'AbortError' ? 'Timed out after 60s' : (err.message || 'Connection failed'));
+      })
+      .finally(() => clearTimeout(timeoutId));
   }
 
   _showUpdateError(message) {
@@ -2587,7 +2540,7 @@ class OverlayManager {
     this.overlayEl.innerHTML =
       `<div class="overlay-content" style="text-align:center;">` +
         `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--accent-red);margin-bottom:2vh;">Update Failed</div>` +
-        `<div style="font-size:clamp(0.9rem,1.8vw,1.8rem);color:var(--text-muted);max-width:60vw;word-break:break-word;">${message}</div>` +
+        `<div style="font-size:clamp(0.9rem,1.8vw,1.8rem);color:var(--text-muted);max-width:60vw;word-break:break-word;">${escapeHtml(message)}</div>` +
         `<div style="margin-top:3vh;font-size:clamp(0.8rem,1.5vw,1.5rem);color:var(--text-muted);">Press any key to go back</div>` +
       `</div>`;
   }
@@ -2625,25 +2578,17 @@ class OverlayManager {
       byDay[d].forEach(e => {
         cells += `<div class="sched-class">`
           + `<span class="sched-time">${fmt(e.startTime)}–${fmt(e.endTime)}</span>`
-          + `<span class="sched-title">${e.title}</span>`
+          + `<span class="sched-title">${escapeHtml(e.title)}</span>`
           + `</div>`;
       });
       if (!byDay[d].length) cells = '<div class="sched-class sched-empty">—</div>';
       cols += `<div class="sched-day"><div class="sched-day-name">${dayAbbr[d]}</div>${cells}</div>`;
     });
 
-    const enabled = APP_SETTINGS.scheduleEnabled;
-    const statusColor = enabled ? 'var(--accent-green)' : 'var(--accent-red)';
-    const statusText = enabled ? 'ON' : 'OFF';
-    const toggleHint = enabled
-      ? '<span style="color:var(--accent-red);">−</span> Disable'
-      : '<span style="color:var(--accent-green);">+</span> Enable';
-
     this.overlayEl.innerHTML =
       `<div class="schedule-overlay overlay-content">`
-      + `<div class="schedule-title">Weekly Schedule <span style="color:${statusColor};font-size:0.6em;">${statusText}</span></div>`
+      + `<div class="schedule-title">Weekly Schedule</div>`
       + `<div class="schedule-grid">${cols}</div>`
-      + `<div class="schedule-hint">${toggleHint} schedule features &nbsp;·&nbsp; Any other key to close</div>`
       + `</div>`;
     this.overlayEl.classList.add('active');
   }
@@ -2682,9 +2627,11 @@ class InputHandler {
     this._enterLongPressTimer = null; // Timer for long-press detection
     this._enterHandledAsLong = false; // Whether current Enter press was handled as long-press
     this._enterDownHandled = false; // Whether Enter keydown was handled by main handler
+    this._holdKey = null; // Which hold-capable key ('Enter' | 'Play' | 'Menu') is currently down
     this._ready = false; // Whether timer area is enlarged but not yet started
     this._timeSettingMode = false; // Whether we're in arrow-key time setting mode
     this._timeSettingField = null; // 'round-min' | 'round-sec' | 'rest-min' | 'rest-sec'
+    this._timeSettingSnapshot = null; // Config snapshot for cancel (key 0)
     // Dual timer support
     this._dualMode = false;
     this._dualState = null;
@@ -2721,6 +2668,12 @@ class InputHandler {
       return null;
     }
 
+    // Remote (Apple Remote via Flirc) keystrokes — see TRAINING_MENU_ITEMS header
+    if (key === ' ' || code === 'Space' || key === 'MediaPlayPause') return 'Play';
+    if (key === 'Escape') return 'Menu';
+    if (key === 'PageUp') return 'StepUp';
+    if (key === 'PageDown') return 'StepDown';
+
     // Also accept regular number keys and * for non-numpad keyboards
     if (key >= '0' && key <= '9') return key;
     if (key === '*') return '*';
@@ -2744,8 +2697,19 @@ class InputHandler {
    * @param {KeyboardEvent} event
    */
   _onKeyDown(event) {
+    // Ctrl+H cycles through holiday theme previews (testing aid)
+    if (event.ctrlKey && (event.key === 'h' || event.key === 'H')) {
+      event.preventDefault();
+      if (this._holidayTheme) this._holidayTheme.cycle();
+      return;
+    }
+
     const key = this._normalizeKey(event);
     if (key === null) return; // Unrecognized key — ignore
+
+    // A different key while ▶/OK/Menu is held (e.g. Flirc's long-press key
+    // arriving mid-hold) cancels that hold so its release does nothing.
+    if (this._holdKey && key !== this._holdKey) this._cancelHold();
 
     // Alias numpad digits 8/6/2/4 as arrow keys when not inside an overlay
     const DIGIT_ARROW_MAP = { '8': 'ArrowUp', '6': 'ArrowRight', '2': 'ArrowDown', '4': 'ArrowLeft' };
@@ -2768,22 +2732,27 @@ class InputHandler {
     // When overlay is open, route ALL input to overlay
     if (this.overlayManager.isOpen()) {
       event.preventDefault();
+      if (event.repeat && effectiveKey !== 'ArrowUp' && effectiveKey !== 'ArrowDown') return;
       this.overlayManager.handleKey(effectiveKey);
+      // If that key closed the overlay, restore the status bar hints
+      if (!this.overlayManager.isOpen()) this._restoreStatusBar();
       return;
     }
 
     // --- Time-setting mode ---
     if (this._timeSettingMode) {
       event.preventDefault();
+      if (event.repeat && (effectiveKey === 'Enter' || effectiveKey === 'Play' || effectiveKey === 'Menu')) return;
       this._handleTimeSettingKey(effectiveKey);
       return;
     }
 
-    // Arrow keys enter time-setting mode (only when idle)
-    if ((effectiveKey === 'ArrowUp' || effectiveKey === 'ArrowDown' || effectiveKey === 'ArrowLeft' || effectiveKey === 'ArrowRight') &&
-        this.state.phase === PHASES.IDLE) {
+    // Ring enters time-setting mode (any phase — a running timer keeps
+    // ticking until the user adjusts a value)
+    if (effectiveKey === 'ArrowUp' || effectiveKey === 'ArrowDown' || effectiveKey === 'ArrowLeft' || effectiveKey === 'ArrowRight' ||
+        effectiveKey === 'StepUp' || effectiveKey === 'StepDown') {
       // Block if a training/competition preset with custom round durations is active
-      // (user must long-press Enter to cancel first)
+      // (user must reset — hold Menu / long-press OK — first)
       if (this.state.roundDurations) return;
       event.preventDefault();
       this._enterTimeSetting();
@@ -2794,22 +2763,19 @@ class InputHandler {
     event.preventDefault();
     switch (effectiveKey) {
       case 'Enter':
-        // Long-press detection: defer action until keyup or 800ms timeout
+      case 'Play':
+      case 'Menu':
+        // Tap vs hold: defer the action until keyup or the hold timeout
         if (event.repeat) break; // Ignore key repeat events
-        this._enterDownTime = Date.now();
-        this._enterHandledAsLong = false;
-        this._enterDownHandled = true;
-        this._enterLongPressTimer = setTimeout(() => {
-          this._enterHandledAsLong = true;
-          this._handleEnterLongPress();
-        }, 800);
+        this._beginHold(effectiveKey, event);
         break;
       case '0':
         // Stop → ready state, or ready → default state
         this._handleZeroPress();
         break;
       case 'Clear':
-        // Disabled — reset is now handled via long-press Enter when idle
+        // Delete (Flirc: hold Menu) → full reset, same as holding OK
+        this._handleEnterLongPress();
         break;
       case '/':
         // Toggle competition presets menu (only when idle)
@@ -2837,6 +2803,16 @@ class InputHandler {
           this.renderer.updateStatusBar('training');
         }
         break;
+      case '9':
+        // Show the weekly schedule overlay (only when idle)
+        if (this.state.phase !== PHASES.IDLE) break;
+        this.overlayManager.showSchedule(this._scheduleManager ? this._scheduleManager._schedule : []);
+        this.renderer.updateStatusBar('hidden');
+        break;
+      case '7':
+        // Cycle dual-screen display mode (mirror → clock+timer → split)
+        if (this._displayModeCallback) this._displayModeCallback();
+        break;
       default:
         // '.' toggles stealth mode
         if (effectiveKey === '.') {
@@ -2851,12 +2827,20 @@ class InputHandler {
    * Activate dual timer mode.
    */
   _activateDualMode() {
-    if (this._dualMode) return;
+    if (this._dualMode || this.state.phase !== PHASES.IDLE) return;
     this._dualMode = true;
+
+    // Clear any active training/competition preset — otherwise Timer 1 keeps the
+    // preset's per-round durations and finite round count under the Dual label
+    this._cancelPreset();
+    // Remember the configured round count so deactivating restores it instead of
+    // persisting the forced 0
+    this._dualSavedNumRounds = this.state.config.numRounds;
 
     const config2 = { ...StorageManager.load() };
     this._dualState = createTimerState(config2);
     this._dualState.config.numRounds = 0;
+    this._dualState.config.prepDurationSec = this.state.config.prepDurationSec;
     this.state.config.numRounds = 0;
     this.state._presetName = 'Dual Timer';
 
@@ -2876,25 +2860,32 @@ class InputHandler {
     const dualState = this._dualState;
     this._dualEngine = new TimerEngine(dualState,
       (s) => {
+        if (this.renderer.stealth) this.renderer.applyStealth(this.state.phase, s.phase);
         if (s.phase === PHASES.ROUND) {
           this._updateTimer2Display(this._dualRendererEls.roundTimerEl, s.remainingSec, true);
           this._updateTimer2Display(this._dualRendererEls.restTimerEl, s.config.restDurationSec, false);
         } else if (s.phase === PHASES.REST) {
           this._updateTimer2Display(this._dualRendererEls.roundTimerEl, s.config.roundDurationSec, false);
           this._updateTimer2Display(this._dualRendererEls.restTimerEl, s.remainingSec, true);
+        } else if (s.phase === PHASES.PREP) {
+          // Show the upcoming durations (inactive) instead of freezing stale values
+          this._updateTimer2Display(this._dualRendererEls.roundTimerEl, s.config.roundDurationSec, false);
+          this._updateTimer2Display(this._dualRendererEls.restTimerEl, s.config.restDurationSec, false);
         }
       },
-      (s, oldPhase, newPhase) => {
-        if (newPhase === PHASES.ROUND) this.audioManager.playRoundStartFanfare();
+      (_s, _oldPhase, newPhase) => {
+        if (newPhase === PHASES.ROUND) {
+          this._dualEngine.emitTransitionCue(() => this.audioManager.playRoundStartFanfare());
+        }
       }
     );
 
     const origTick2 = this._dualEngine.tick.bind(this._dualEngine);
     this._dualEngine.tick = () => {
       const alert = origTick2();
-      if (alert.type === 'end_round') this.audioManager.playEndOfRoundBeepT2();
-      else if (alert.type === 'end_rest') this.audioManager.playEndOfRestBeepT2();
-      else if (alert.type === 'countdown') this.audioManager.playCountdownBeepT2();
+      if (alert.type === 'end_round') this._dualEngine.emitTransitionCue(() => this.audioManager.playEndOfRoundBeepT2());
+      else if (alert.type === 'end_rest') this._dualEngine.emitTransitionCue(() => this.audioManager.playEndOfRestBeepT2());
+      else if (alert.type === 'countdown' && !this._dualEngine.silent) this.audioManager.playCountdownBeepT2();
       return alert;
     };
 
@@ -2911,6 +2902,15 @@ class InputHandler {
     this._dualMode = false;
     if (this._dualEngine) { this._dualEngine.stop(); this._dualEngine = null; }
     this._dualState = null;
+    // Restore the round count that activation forced to 0
+    if (typeof this._dualSavedNumRounds === 'number') {
+      this.state.config.numRounds = this._dualSavedNumRounds;
+      this._dualSavedNumRounds = undefined;
+    }
+    if (this.state._presetName === 'Dual Timer') {
+      this.state._presetName = null;
+      this.renderer.updatePresetLabel(null);
+    }
     const panel2 = document.getElementById('timer-panel-2');
     if (panel2) panel2.style.display = 'none';
     const container = document.getElementById('dual-timer-container');
@@ -2918,13 +2918,14 @@ class InputHandler {
     const timerArea = document.getElementById('timer-area');
     if (timerArea) timerArea.classList.remove('dual-timer-active');
     this._dualRendererEls = null;
+    // Split display mode requires dual timers — let the app fall back to mirror
+    if (this._onDualDeactivated) this._onDualDeactivated();
   }
 
   _updateTimer2Display(el, remainingSec, isActive) {
     if (!el) return;
-    const mins = String(Math.floor(remainingSec / 60)).padStart(2, '0');
-    const secs = String(remainingSec % 60).padStart(2, '0');
-    el.innerHTML = `<span class="ts-minutes">${mins}</span>:<span class="ts-seconds">${secs}</span>`;
+    Renderer.setDigits(el, remainingSec);
+    el.classList.toggle('timer-active', !!isActive);
   }
 
   /**
@@ -2933,6 +2934,12 @@ class InputHandler {
   _enterTimeSetting() {
     this._timeSettingMode = true;
     this._timeSettingField = 'round-min';
+    // Snapshot so key 0 can cancel and revert any adjustments
+    this._timeSettingSnapshot = {
+      config: { ...this.state.config },
+      dualConfig: this._dualState ? { ...this._dualState.config } : null,
+      presetName: this.state._presetName || null
+    };
     const timerArea = document.getElementById('timer-area');
     if (timerArea) timerArea.classList.add('time-setting-active');
     document.body.classList.add('time-setting');
@@ -2947,6 +2954,7 @@ class InputHandler {
   _exitTimeSetting() {
     this._timeSettingMode = false;
     this._timeSettingField = null;
+    this._timeSettingSnapshot = null;
     this.renderer.roundTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
     this.renderer.restTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
     if (this.renderer.roundCounterEl) this.renderer.roundCounterEl.classList.remove('time-setting-active');
@@ -2961,24 +2969,42 @@ class InputHandler {
     document.body.classList.remove('time-setting');
     const bar = document.getElementById('edit-instruction-bar');
     if (bar) { bar.classList.remove('active'); bar.innerHTML = ''; }
-    this.renderer.updateStatusBar(this._ready ? 'ready' : 'clock');
+    const dualActive = this._dualMode && this._dualEngine && this._dualState &&
+      this._dualState.phase !== PHASES.IDLE;
+    if (this.state.phase !== PHASES.IDLE || dualActive) {
+      const paused = this.state.paused || (dualActive && this._dualState.paused);
+      this.renderer.updateStatusBar(paused ? 'paused' : 'running');
+    } else {
+      this.renderer.updateStatusBar(this._ready ? 'ready' : 'clock');
+    }
   }
 
   /**
    * Render the timer display with span-wrapped digit groups for selective blinking.
    */
   _renderTimeSettingDisplay() {
-    this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
-    this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
-    this.renderer.updateRoundCounter(0, this.state.config.numRounds);
+    // While a session is running (or paused), leave the displayed values
+    // untouched — the timer keeps going as usual and only the blink highlight
+    // marks the selected field. Values render once +/- stops the session.
+    const dualActive = this._dualMode && this._dualEngine && this._dualState &&
+      this._dualState.phase !== PHASES.IDLE;
+    const sessionActive = this.state.phase !== PHASES.IDLE || dualActive;
+
+    if (!sessionActive) {
+      this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
+      this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
+      this.renderer.updateRoundCounter(0, this.state.config.numRounds);
+    }
 
     this.renderer.roundTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
     this.renderer.restTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
     if (this.renderer.roundCounterEl) this.renderer.roundCounterEl.classList.remove('time-setting-active');
 
     if (this._dualMode && this._dualState && this._dualRendererEls) {
-      this._updateTimer2Display(this._dualRendererEls.roundTimerEl, this._dualState.config.roundDurationSec, false);
-      this._updateTimer2Display(this._dualRendererEls.restTimerEl, this._dualState.config.restDurationSec, false);
+      if (!sessionActive) {
+        this._updateTimer2Display(this._dualRendererEls.roundTimerEl, this._dualState.config.roundDurationSec, false);
+        this._updateTimer2Display(this._dualRendererEls.restTimerEl, this._dualState.config.restDurationSec, false);
+      }
       const rt2 = this._dualRendererEls.roundTimerEl;
       const xt2 = this._dualRendererEls.restTimerEl;
       if (rt2) rt2.classList.remove('time-setting-minutes', 'time-setting-seconds');
@@ -3003,32 +3029,14 @@ class InputHandler {
   }
 
   /**
-   * Show the instruction bar for time-setting mode.
+   * The top "Editing: <field>" header was removed; the highlighted digits are
+   * the only editing indicator. The bar element is kept (empty) for display sync.
    */
   _updateTimeSettingBar() {
     const bar = document.getElementById('edit-instruction-bar');
     if (!bar) return;
-    const fieldLabels = this._dualMode ? {
-      'round-min': 'T1 Round Min', 'round-sec': 'T1 Round Sec',
-      'rest-min': 'T1 Rest Min', 'rest-sec': 'T1 Rest Sec',
-      'rounds': 'Rounds',
-      't2-round-min': 'T2 Round Min', 't2-round-sec': 'T2 Round Sec',
-      't2-rest-min': 'T2 Rest Min', 't2-rest-sec': 'T2 Rest Sec'
-    } : {
-      'round-min': 'Round Minutes', 'round-sec': 'Round Seconds',
-      'rest-min': 'Rest Minutes', 'rest-sec': 'Rest Seconds',
-      'rounds': 'Rounds'
-    };
-    const label = fieldLabels[this._timeSettingField] || '';
-    bar.innerHTML =
-      `<div>Editing: ${label}</div>` +
-      `<div class="edit-hint">` +
-      `<span class="key-badge">+</span> / <span class="key-badge">−</span> adjust &nbsp; ` +
-      `<span class="key-badge">◀▶</span> switch digits &nbsp; ` +
-      `<span class="key-badge">▲▼</span> switch timer &nbsp; ` +
-      `<span class="key-badge">Enter</span> <span class="key-badge">*</span> <span class="key-badge">/</span> exit` +
-      `</div>`;
-    bar.classList.add('active');
+    bar.innerHTML = '';
+    bar.classList.remove('active');
   }
 
   /**
@@ -3036,61 +3044,93 @@ class InputHandler {
    */
   _handleTimeSettingKey(key) {
     const field = this._timeSettingField;
-    const dual = this._dualMode;
 
-    // Navigation with dual mode support
-    if (key === 'ArrowRight') {
-      const nav = { 'round-min': 'round-sec', 'rest-min': 'rest-sec',
-        'round-sec': dual ? 't2-round-min' : 'round-sec',
-        'rest-sec': dual ? 't2-rest-min' : 'rest-sec',
-        't2-round-min': 't2-round-sec', 't2-round-sec': 't2-round-sec',
-        't2-rest-min': 't2-rest-sec', 't2-rest-sec': 't2-rest-sec' };
-      this._timeSettingField = nav[field] || field;
-      this._renderTimeSettingDisplay(); this._updateTimeSettingBar(); return;
-    }
-    if (key === 'ArrowLeft') {
-      const nav = { 'round-min': 'round-min', 'round-sec': 'round-min',
-        'rest-min': 'rest-min', 'rest-sec': 'rest-min',
-        't2-round-min': 'round-sec', 't2-round-sec': 't2-round-min',
-        't2-rest-min': 'rest-sec', 't2-rest-sec': 't2-rest-min' };
-      this._timeSettingField = nav[field] || field;
-      this._renderTimeSettingDisplay(); this._updateTimeSettingBar(); return;
-    }
-    if (key === 'ArrowDown') {
-      const nav = { 'round-min': 'rest-min', 'round-sec': 'rest-sec',
-        'rest-min': 'rounds', 'rest-sec': 'rounds',
-        't2-round-min': 't2-rest-min', 't2-round-sec': 't2-rest-sec' };
-      this._timeSettingField = nav[field] || field;
-      this._renderTimeSettingDisplay(); this._updateTimeSettingBar(); return;
-    }
-    if (key === 'ArrowUp') {
-      const nav = { 'rest-min': 'round-min', 'rest-sec': 'round-sec',
-        'rounds': 'rest-min',
-        't2-rest-min': 't2-round-min', 't2-rest-sec': 't2-round-sec' };
-      this._timeSettingField = nav[field] || field;
+    // ◀▶ walk one linear sequence of fields (timer 2's fields follow when dual)
+    if (key === 'ArrowRight' || key === 'ArrowLeft') {
+      const order = ['round-min', 'round-sec', 'rest-min', 'rest-sec', 'rounds'];
+      if (this._dualMode) order.push('t2-round-min', 't2-round-sec', 't2-rest-min', 't2-rest-sec');
+      const i = Math.max(0, order.indexOf(field));
+      this._timeSettingField = order[moveSelection(i, key === 'ArrowRight' ? 1 : -1, order.length)];
       this._renderTimeSettingDisplay(); this._updateTimeSettingBar(); return;
     }
 
-    if (key === '+' || key === '-') {
-      this._adjustTimeSettingValue(key === '+' ? 1 : -1);
+    // ▲▼ adjust the selected field; held ring (StepUp/StepDown) takes big steps
+    if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'StepUp' || key === 'StepDown' || key === '+' || key === '-') {
+      const up = key === 'ArrowUp' || key === 'StepUp' || key === '+';
+      this._adjustTimeSettingValue(up ? 1 : -1, key === 'StepUp' || key === 'StepDown');
       return;
     }
 
-    if (key === 'Enter' || key === '*' || key === '/' || key === '0') {
-      StorageManager.save(this.state.config);
-      this.state.remainingSec = this.state.config.roundDurationSec;
-      if (this._dualMode && this._dualState) {
+    if (key === 'Play') key = 'Enter'; // ▶ confirms and starts, like OK
+    if (key === 'Menu') key = '0'; // Menu cancels, like 0
+
+    if (key === '0') {
+      // Cancel: revert any adjustments and leave a running timer untouched
+      const snap = this._timeSettingSnapshot;
+      if (snap) {
+        this.state.config = { ...snap.config };
+        if (this._dualState && snap.dualConfig) {
+          this._dualState.config = { ...snap.dualConfig };
+        }
+        this.state._presetName = snap.presetName;
+        this.renderer.updatePresetLabel(snap.presetName);
+      }
+      const cancelDualActive = this._dualMode && this._dualEngine && this._dualState &&
+        this._dualState.phase !== PHASES.IDLE;
+      if (this.state.phase === PHASES.IDLE) {
+        this.state.remainingSec = this.state.config.roundDurationSec;
+      }
+      if (this._dualMode && this._dualState && this._dualState.phase === PHASES.IDLE) {
         this._dualState.remainingSec = this._dualState.config.roundDurationSec;
       }
       this._exitTimeSetting();
+      if (this.state.phase !== PHASES.IDLE || cancelDualActive) {
+        this._refreshTimerDisplay();
+      } else {
+        this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
+        this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
+        this.renderer.updateRoundCounter(0, this.state.config.numRounds);
+        if (this._dualMode && this._dualState && this._dualRendererEls) {
+          this._updateTimer2Display(this._dualRendererEls.roundTimerEl, this._dualState.config.roundDurationSec, false);
+          this._updateTimer2Display(this._dualRendererEls.restTimerEl, this._dualState.config.restDurationSec, false);
+        }
+      }
+      return;
+    }
+
+    if (key === 'Enter' || key === '*' || key === '/') {
+      StorageManager.save(this.state.config);
+      const dualActive = this._dualMode && this._dualEngine && this._dualState &&
+        this._dualState.phase !== PHASES.IDLE;
+      const sessionActive = this.state.phase !== PHASES.IDLE || dualActive;
+      // Only reset remaining time when idle — a running/paused timer keeps its
+      // in-flight countdown
+      if (this.state.phase === PHASES.IDLE) {
+        this.state.remainingSec = this.state.config.roundDurationSec;
+      }
+      if (this._dualMode && this._dualState && this._dualState.phase === PHASES.IDLE) {
+        this._dualState.remainingSec = this._dualState.config.roundDurationSec;
+      }
+      this._exitTimeSetting();
+
+      if (sessionActive) {
+        // Timer kept running while editing — restore the live display and skip
+        // ready-state/menu handling
+        this._refreshTimerDisplay();
+        return;
+      }
 
       if (key === 'Enter') {
         if (this.state.config.roundDurationSec === 0) {
           this.audioManager.playMuffle();
         } else {
-          // Go to ready state (enlarged) instead of starting immediately
-          this._ready = true;
+          // Start the timer immediately with the freshly set values
+          this._ready = false;
           document.body.classList.remove('timer-idle');
+          this.engine.start();
+          if (this._dualMode && this._dualEngine) this._dualEngine.start();
+          this._refreshTimerDisplay();
+          this.renderer.updateStatusBar('running');
         }
       } else if (key === '*') {
         this.overlayManager.showTrainingMenu({ ...this.state.config }, (updatedConfig) => {
@@ -3108,17 +3148,48 @@ class InputHandler {
   }
 
   /**
+   * Stop a running (or paused) session because the user changed a setting
+   * while in time-setting mode. Leaves the app in the ready state and keeps
+   * time-setting mode active. No-op when nothing is running.
+   */
+  _stopIfRunning() {
+    const dualActive = this._dualMode && this._dualEngine && this._dualState &&
+      this._dualState.phase !== PHASES.IDLE;
+    if (this.state.phase === PHASES.IDLE && !dualActive) return;
+    if (this.state.paused || (dualActive && this._dualState.paused)) {
+      this.renderer.hidePauseOverlay();
+    }
+    if (this.state.phase !== PHASES.IDLE) {
+      this.state._cancelledByUser = true;
+      this.engine.stop();
+    }
+    if (dualActive) {
+      this._dualState._cancelledByUser = true;
+      this._dualEngine.stop();
+    }
+    this.audioManager.playCancel();
+    this._ready = true;
+    document.body.classList.remove('timer-idle');
+    this.renderer.updateStatusBar('editing');
+  }
+
+  /**
    * Adjust the value of the currently selected time-setting field.
    * @param {number} direction - +1 or -1
+   * @param {boolean} [big] - Held ring: minutes ±5, seconds ±15, rounds ±5
    */
-  _adjustTimeSettingValue(direction) {
+  _adjustTimeSettingValue(direction, big) {
+    this._stopIfRunning();
     const field = this._timeSettingField;
 
     // Rounds adjustment
     if (field === 'rounds') {
-      let rounds = this.state.config.numRounds + direction;
+      let rounds = this.state.config.numRounds + direction * (big ? 5 : 1);
       if (rounds < 0) rounds = 0;
       this.state.config.numRounds = rounds;
+      // An explicit edit while in dual mode wins over the count saved at
+      // activation, so leaving dual mode does not silently revert it
+      if (this._dualMode) this._dualSavedNumRounds = undefined;
       this._cancelPreset();
       this.renderer.updateRoundCounter(0, rounds);
       this._renderTimeSettingDisplay();
@@ -3137,13 +3208,11 @@ class InputHandler {
     let secs = totalSec % 60;
 
     if (baseField === 'round-min' || baseField === 'rest-min') {
-      mins += direction;
+      mins += direction * (big ? 5 : 1);
       if (mins < 0) mins = 0;
       if (mins > 30) mins = 30;
     } else {
-      secs += direction * 5;
-      if (secs > 55) secs = 0;
-      if (secs < 0) secs = 55;
+      secs = (((secs + direction * (big ? 15 : 5)) % 60) + 60) % 60; // wraps 55 → 0 → 55
     }
 
     targetState.config[configKey] = mins * 60 + secs;
@@ -3205,19 +3274,150 @@ class InputHandler {
    * @param {KeyboardEvent} event
    */
   _onKeyUp(event) {
-    const key = event.key;
-    if (key !== 'Enter') return;
+    const key = this._normalizeKey(event);
+    if (key !== 'Enter' && key !== 'Play' && key !== 'Menu') return;
+    if (key !== this._holdKey) return; // Release of a key whose hold was cancelled
     if (this._enterLongPressTimer) {
       clearTimeout(this._enterLongPressTimer);
       this._enterLongPressTimer = null;
     }
     // Ignore if the keydown was consumed by an overlay
-    if (!this._enterDownHandled) return;
+    if (!this._enterDownHandled) { this._holdKey = null; return; }
     this._enterDownHandled = false;
-    if (!this._enterHandledAsLong) {
-      this._handleEnterShortPress();
-    }
+    this._holdKey = null;
+    if (!this._enterHandledAsLong) this._handleTap(key);
     this._enterHandledAsLong = false;
+  }
+
+  /**
+   * Start tap-vs-hold detection for ▶ (Play), OK (Enter) or Menu.
+   * A relayed gesture from the secondary display arrives complete, with
+   * `relayHeldMs` on the keydown event.
+   * @private
+   */
+  _beginHold(key, event) {
+    this._holdKey = key;
+    this._enterDownTime = Date.now();
+    this._enterHandledAsLong = false;
+    this._enterDownHandled = true;
+    if (Number.isFinite(event.relayHeldMs)) {
+      if (event.relayHeldMs >= HOLD_MS) {
+        this._enterHandledAsLong = true;
+        this._handleHold(key);
+      }
+      return;
+    }
+    this._enterLongPressTimer = setTimeout(() => {
+      this._enterLongPressTimer = null;
+      this._enterHandledAsLong = true;
+      this._handleHold(key);
+    }, HOLD_MS);
+  }
+
+  /** @private */
+  _cancelHold() {
+    if (this._enterLongPressTimer) {
+      clearTimeout(this._enterLongPressTimer);
+      this._enterLongPressTimer = null;
+    }
+    this._holdKey = null;
+    this._enterDownHandled = false;
+    this._enterHandledAsLong = false;
+  }
+
+  /** @private */
+  _handleTap(key) {
+    if (key === 'Menu') this._openMainMenu();
+    else this._handleEnterShortPress();
+  }
+
+  /** @private */
+  _handleHold(key) {
+    if (key === 'Play') this._handleZeroPress(); // hold ▶ = stop
+    else this._handleEnterLongPress(); // hold OK / Menu = reset (or stop while running)
+  }
+
+  /**
+   * Restore the status bar for the current timer state after an overlay or
+   * time-setting mode closes.
+   * @private
+   */
+  _restoreStatusBar() {
+    const dualActive = this._dualMode && this._dualEngine && this._dualState &&
+      this._dualState.phase !== PHASES.IDLE;
+    if (this.state.phase !== PHASES.IDLE || dualActive) {
+      const paused = this.state.paused || (dualActive && this._dualState.paused);
+      this.renderer.updateStatusBar(paused ? 'paused' : 'running');
+    } else {
+      this.renderer.updateStatusBar(this._ready ? 'ready' : 'clock');
+    }
+  }
+
+  /**
+   * Menu tap: open the main menu. While idle it lists presets, schedule and
+   * settings; while a timer runs it is just Pause/Resume, Reset timer, Blank
+   * screen and Reset all.
+   */
+  _openMainMenu() {
+    if (this.overlayManager.isOpen()) return;
+    const dualActive = this._dualMode && this._dualEngine && this._dualState &&
+      this._dualState.phase !== PHASES.IDLE;
+    const idle = this.state.phase === PHASES.IDLE && !dualActive;
+    const items = [];
+    if (!idle) {
+      // While a timer runs the menu is a short action list; every item closes it.
+      const paused = this.state.paused || (dualActive && this._dualState.paused);
+      items.push({ id: 'pause', icon: paused ? 'play' : 'pause', name: paused ? 'Resume' : 'Pause', action: () => {
+        this._handleEnterShortPress();
+      } });
+      items.push({ id: 'reset-timer', icon: 'repeat', name: 'Reset timer', action: () => {
+        this._handleZeroPress(); // stop → back to the ready state with the same settings
+      } });
+      items.push({ id: 'blank', icon: 'blank', name: 'Blank screen', action: () => {
+        this.renderer.toggleStealth();
+        this.renderer.applyStealth(this.state.phase);
+      } });
+      items.push({ id: 'reset-all', icon: 'power', name: 'Reset all', action: () => {
+        this._handleZeroPress();        // stop the running timer
+        this._handleEnterLongPress();   // then the idle full reset to app defaults
+      } });
+      this.overlayManager.showMainMenu(items);
+      this.renderer.updateStatusBar('menu');
+      return;
+    }
+    items.push({ id: 'training', icon: 'ladderUp', name: 'Training', submenu: true, action: () => {
+      this.overlayManager.showTrainingMenu({ ...this.state.config }, (cfg) => this._applyMenuConfig(cfg));
+    } });
+    items.push({ id: 'competition', icon: 'belt', name: 'Competition', submenu: true, action: () => {
+      this.overlayManager.showCompetitionMenu({ ...this.state.config }, (cfg) => this._applyMenuConfig(cfg));
+    } });
+    items.push({ id: 'schedule', icon: 'tabata', name: 'Schedule', submenu: true, action: () => {
+      this.overlayManager.showSchedule(this._scheduleManager ? this._scheduleManager._schedule : []);
+    } });
+    if (this._displayModeCallback) {
+      items.push({ id: 'screens', icon: 'dual', name: 'Screens', action: () => {
+        this._displayModeCallback();
+        this._restoreStatusBar();
+      } });
+    }
+    items.push({ id: 'blank', icon: 'blank', name: 'Blank screen', action: () => {
+      this.renderer.toggleStealth();
+      this.renderer.applyStealth(this.state.phase);
+    } });
+    items.push({ id: 'holiday', icon: 'snow', name: 'Holiday theme', toggle: true,
+      note: () => (APP_SETTINGS.holidayThemeEnabled ? 'ON' : 'OFF'),
+      action: () => { this.overlayManager.toggleHolidayTheme(); } });
+    items.push({ id: 'schedule-toggle', icon: 'tabata', name: 'Weekly schedule', toggle: true,
+      note: () => (APP_SETTINGS.scheduleEnabled ? 'ON' : 'OFF'),
+      action: () => { this.overlayManager.toggleSchedule(); } });
+    items.push({ id: 'update', icon: 'download', name: 'Update app', submenu: true, action: () => {
+      this.overlayManager.showUpdateConfirm();
+    } });
+    items.push({ id: 'credits', icon: 'gear', name: 'About', submenu: true, action: () => {
+      this.overlayManager.showCredits();
+    } });
+    this.overlayManager.showMainMenu(items);
+    this.renderer.updateStatusBar('menu');
   }
 
   /**
@@ -3246,14 +3446,19 @@ class InputHandler {
   _handleZeroPress() {
     if (this.overlayManager.isOpen()) return;
 
-    if (this.state.phase !== PHASES.IDLE) {
-      // Running or paused → stop but stay in ready state (enlarged)
-      if (this.state.paused) {
+    const dualActive = this._dualMode && this._dualEngine && this._dualState &&
+      this._dualState.phase !== PHASES.IDLE;
+    if (this.state.phase !== PHASES.IDLE || dualActive) {
+      // Running or paused → stop but stay in ready state (enlarged).
+      // Timer 2 may still be running after Timer 1 finished its rounds — stop it too.
+      if (this.state.paused || (dualActive && this._dualState.paused)) {
         this.renderer.hidePauseOverlay();
       }
-      this.state._cancelledByUser = true;
-      this.engine.stop();
-      if (this._dualMode && this._dualEngine) {
+      if (this.state.phase !== PHASES.IDLE) {
+        this.state._cancelledByUser = true;
+        this.engine.stop();
+      }
+      if (dualActive) {
         this._dualState._cancelledByUser = true;
         this._dualEngine.stop();
       }
@@ -3286,7 +3491,9 @@ class InputHandler {
    */
   _handleEnterShortPress() {
     if (this.overlayManager.isOpen()) return;
-    if (this.state.phase === PHASES.IDLE) {
+    const dualActive = this._dualMode && this._dualEngine && this._dualState &&
+      this._dualState.phase !== PHASES.IDLE;
+    if (this.state.phase === PHASES.IDLE && !dualActive) {
       // Don't start if round duration is 0
       if (this.state.config.roundDurationSec === 0) {
         this.audioManager.playMuffle();
@@ -3305,7 +3512,7 @@ class InputHandler {
       if (this._dualMode && this._dualEngine) this._dualEngine.start();
       this._refreshTimerDisplay();
       this.renderer.updateStatusBar('running');
-    } else if (this.state.paused) {
+    } else if (this.state.paused || (dualActive && this._dualState.paused)) {
       this.engine.resume();
       if (this._dualMode && this._dualEngine) this._dualEngine.resume();
       this.renderer.hidePauseOverlay();
@@ -3336,7 +3543,6 @@ class InputHandler {
       this.state.roundDurations = null;
       this.state.restDurations = null;
       this.state._presetName = null;
-      this.state._quickTimerRestore = null;
       this.state.paused = false;
       if (this._resetCallback) {
         this._resetCallback();
@@ -3347,7 +3553,6 @@ class InputHandler {
         this.state.remainingSec = DEFAULT_CONFIG.roundDurationSec;
         StorageManager.save(this.state.config);
       }
-      this.renderer.clearQuickTimerMode();
       this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
       this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
       this.renderer.updateRoundCounter(0, this.state.config.numRounds);
@@ -3355,16 +3560,15 @@ class InputHandler {
       this.renderer.hidePrepCountdown();
       this.renderer.hideRoundList();
       this.renderer.hidePauseOverlay();
-      this.renderer.hideRoundsOver();
       this.audioManager.playCancel();
     } else {
       // Same as Stop (key 0)
-      if (this.state.paused) {
+      if (this.state.paused || (this._dualMode && this._dualState && this._dualState.paused)) {
         this.renderer.hidePauseOverlay();
       }
       this.state._cancelledByUser = true;
       this.engine.stop();
-      if (this._dualMode && this._dualEngine) {
+      if (this._dualMode && this._dualEngine && this._dualState.phase !== PHASES.IDLE) {
         this._dualState._cancelledByUser = true;
         this._dualEngine.stop();
       }
@@ -3448,6 +3652,7 @@ class WeatherManager {
 const VALID_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const VALID_CLASS_TYPES = ['kids', 'kids_advanced', 'kids_nogi', 'adult_basics', 'adult_all_levels', 'adult_advanced', 'drill', 'marathon_roll', 'open_mat'];
 const SCHEDULE_STORAGE_KEY = 'bjj-timer-schedule';
+const SYNCED_SCHEDULE_FILE = 'schedule.json';
 
 // --- ClassPresetManager ---
 
@@ -3493,13 +3698,13 @@ class ClassPresetManager {
       if (!this._presets[classType]) continue;
       const override = overrides[classType];
       if (!override || typeof override !== 'object') continue;
-      if (typeof override.roundDurationSec === 'number') {
+      if (isValidSeconds(override.roundDurationSec)) {
         this._presets[classType].roundDurationSec = override.roundDurationSec;
       }
-      if (typeof override.restDurationSec === 'number') {
+      if (isValidSeconds(override.restDurationSec)) {
         this._presets[classType].restDurationSec = override.restDurationSec;
       }
-      if (typeof override.numRounds === 'number') {
+      if (isValidSeconds(override.numRounds)) {
         this._presets[classType].numRounds = override.numRounds;
       }
     }
@@ -3516,6 +3721,13 @@ class ClassPresetManager {
     }
     return result;
   }
+}
+
+// Resolve recurring local times on the actual date, including DST offset changes.
+// Ambiguous fall-back times use the first occurrence (Date's local-time policy).
+function classInstant(date, time) {
+  const [h, m] = time.split(':').map(Number);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), h, m);
 }
 
 // --- ScheduleManager ---
@@ -3545,9 +3757,9 @@ class ScheduleManager {
    * cache to localStorage, and apply preset overrides.
    * Falls back to cached schedule on failure.
    */
-  async loadConfig() {
+  async loadConfig(initialConfig) {
     try {
-      const response = await fetch('config.json');
+      const response = initialConfig ? { ok: true, json: async () => initialConfig } : await fetch('config.json', { cache: 'no-store' });
       if (!response.ok) {
         throw new Error('Could not load schedule');
       }
@@ -3563,9 +3775,15 @@ class ScheduleManager {
         throw new Error('config.json missing schedule data');
       }
 
+      // The Gymdesk sync writes the live schedule to an untracked
+      // schedule.json so git pulls never conflict with it. When present and
+      // valid it replaces the schedule bundled in config.json.
+      const synced = await this._fetchSyncedSchedule();
+      const scheduleEntries = synced || data.schedule;
+
       // Validate entries
       const validEntries = [];
-      data.schedule.forEach((entry, index) => {
+      scheduleEntries.forEach((entry, index) => {
         const result = this.validateEntry(entry);
         if (result.valid) {
           validEntries.push(entry);
@@ -3603,6 +3821,34 @@ class ScheduleManager {
   }
 
   /**
+   * Fetch schedule.json (written by sync-schedule.js). Returns the schedule
+   * array, or null when the file is absent or malformed.
+   * @returns {Promise<Array|null>}
+   * @private
+   */
+  async _fetchSyncedSchedule() {
+    try {
+      const response = await fetch(SYNCED_SCHEDULE_FILE, { cache: 'no-store' });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data && Array.isArray(data.schedule) ? data.schedule : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * Seconds left in the class active at `now`, or 0 when no class is active.
+   * @param {Date} now
+   * @returns {number}
+   */
+  getRemainingClassSec(now) {
+    const active = this.getActiveClass(now);
+    if (!active) return 0;
+    return Math.max(0, Math.ceil((classInstant(now, active.endTime) - now) / 1000));
+  }
+
+  /**
    * Load schedule from localStorage cache.
    * @private
    */
@@ -3612,7 +3858,7 @@ class ScheduleManager {
       if (raw) {
         const cached = JSON.parse(raw);
         if (cached && Array.isArray(cached.schedule)) {
-          this._schedule = cached.schedule;
+          this._schedule = cached.schedule.filter(entry => this.validateEntry(entry).valid);
           if (cached.presetOverrides) {
             this.presetManager.applyOverrides(cached.presetOverrides);
           }
@@ -3695,10 +3941,9 @@ class ScheduleManager {
    */
   getActiveClass(now) {
     const dayName = VALID_DAYS[now.getDay() === 0 ? 6 : now.getDay() - 1];
-    const nowTime = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
 
     for (const entry of this._schedule) {
-      if (entry.dayOfWeek === dayName && nowTime >= entry.startTime && nowTime < entry.endTime) {
+      if (entry.dayOfWeek === dayName && now >= classInstant(now, entry.startTime) && now < classInstant(now, entry.endTime)) {
         return entry;
       }
     }
@@ -3782,16 +4027,747 @@ class ScheduleManager {
 }
 
 // Export for testing (Node.js / Vitest)
+// --- HolidayThemeManager ---
+
+/**
+ * Determine which US holiday (if any) is celebrated on the given date.
+ * Ranges roughly match when people actually decorate/celebrate.
+ * @param {Date} date
+ * @returns {'christmas'|'newyear'|'halloween'|'july4'|'thanksgiving'|'valentine'|null}
+ */
+function getActiveHoliday(date) {
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+  if (m === 12 && d <= 26) return 'christmas';
+  if ((m === 12 && d >= 31) || (m === 1 && d <= 2)) return 'newyear';
+  if (m === 10 && d >= 25) return 'halloween';
+  if (m === 7 && d <= 4) return 'july4';
+  if (m === 2 && d >= 12 && d <= 14) return 'valentine';
+  if (m === 11) {
+    // Thanksgiving is the 4th Thursday of November; decorate Monday through Thursday
+    const firstDay = new Date(date.getFullYear(), 10, 1).getDay(); // 0 = Sunday
+    const firstThursday = 1 + ((4 - firstDay + 7) % 7);
+    const thanksgiving = firstThursday + 21;
+    if (d >= thanksgiving - 3 && d <= thanksgiving) return 'thanksgiving';
+  }
+  return null;
+}
+
+// Visual config per holiday particle animation.
+// kind: 'snow' (white dots) | 'confetti' (colored slips) | 'glyph' (emoji/char)
+// mode: 'fall' (default) | 'rise' | 'drift' (horizontal)
+// accents: larger emoji occasionally mixed into the animation (e.g. a snowman
+// falling among the snowflakes); accentRatio is the chance a spawned particle
+// is an accent.
+const HOLIDAY_THEMES = {
+  christmas: { label: 'Christmas', particles: { kind: 'snow', count: 45, accents: ['⛄', '🎄'], accentRatio: 0.08 } },
+  newyear: { label: "New Year's", particles: { kind: 'confetti', count: 25, colors: ['#ffd700', '#ffedb3', '#ffffff'], accents: ['🎊', '🎆'], accentRatio: 0.12 } },
+  halloween: { label: 'Halloween', particles: { kind: 'glyph', count: 6, glyphs: ['🦇'], mode: 'drift', alpha: 0.35, accents: ['🎃', '👻'], accentRatio: 0.35 } },
+  july4: { label: 'July 4th', particles: { kind: 'confetti', count: 25, colors: ['#ff4d4d', '#ffffff', '#4d79ff'], accents: ['🎆'], accentRatio: 0.12 } },
+  thanksgiving: { label: 'Thanksgiving', particles: { kind: 'glyph', count: 14, glyphs: ['🍂', '🍁'], alpha: 0.5, accents: ['🦃'], accentRatio: 0.1 } },
+  valentine: { label: "Valentine's Day", particles: { kind: 'glyph', count: 12, glyphs: ['♥'], colors: ['#ff8fa3', '#ff5c7a'], mode: 'rise', alpha: 0.4, accents: ['💕'], accentRatio: 0.15 } }
+};
+
+/**
+ * Renders subtle holiday decorations as a low-opacity full-screen particle
+ * animation on a canvas, with occasional larger accent emoji (snowman, ghost,
+ * turkey, ...) mixed in among the base particles.
+ * Off by default; toggled from the credits page and persisted in localStorage.
+ */
+class HolidayThemeManager {
+  constructor() {
+    this.layerEl = document.getElementById('holiday-layer');
+    this.canvasEl = document.getElementById('holiday-canvas');
+    this.ctx = this.canvasEl ? this.canvasEl.getContext('2d') : null;
+    this._holiday = null;
+    this._forcedHoliday = null; // Debug override via ?holiday=<name> or Ctrl+H cycling
+    this._toastTimer = null;
+    this._particles = [];
+    this._rafId = null;
+    this._lastTs = 0;
+    this._onResize = () => this._resizeCanvas();
+  }
+
+  /**
+   * Apply the current theme and re-evaluate hourly so decorations
+   * appear/disappear at day boundaries without a reload.
+   */
+  start() {
+    this.refresh();
+    this._refreshId = setInterval(() => this.refresh(), 60 * 60 * 1000);
+  }
+
+  /**
+   * Stop the hourly re-evaluation and any running particle animation.
+   */
+  stop() {
+    if (this._refreshId) {
+      clearInterval(this._refreshId);
+      this._refreshId = null;
+    }
+    this._stopParticles();
+  }
+
+  /**
+   * Re-evaluate the enabled flag and today's date, updating the display.
+   */
+  refresh() {
+    const holiday = this._forcedHoliday ||
+      (APP_SETTINGS.holidayThemeEnabled ? getActiveHoliday(new Date()) : null);
+    if (holiday === this._holiday) return;
+    this._holiday = holiday;
+    this._apply(holiday);
+  }
+
+  /**
+   * Cycle through each theme as a forced preview (testing aid, Ctrl+H).
+   * After the last theme, returns to automatic date-based behavior.
+   */
+  cycle() {
+    const names = Object.keys(HOLIDAY_THEMES);
+    const idx = this._forcedHoliday ? names.indexOf(this._forcedHoliday) : -1;
+    this._forcedHoliday = idx + 1 < names.length ? names[idx + 1] : null;
+    this.refresh();
+    this._showCycleToast();
+  }
+
+  _showCycleToast() {
+    const toast = document.getElementById('holiday-cycle-toast');
+    if (!toast) return;
+    toast.textContent = this._forcedHoliday
+      ? `Holiday preview: ${HOLIDAY_THEMES[this._forcedHoliday].label}`
+      : 'Holiday preview: off (automatic)';
+    toast.classList.add('visible');
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => toast.classList.remove('visible'), 2000);
+  }
+
+  _apply(holiday) {
+    if (!this.layerEl) return;
+    if (!holiday) {
+      this.layerEl.classList.remove('active');
+      this._stopParticles();
+      return;
+    }
+    const theme = HOLIDAY_THEMES[holiday];
+    this.layerEl.classList.add('active');
+    this._startParticles(theme.particles);
+  }
+
+  _resizeCanvas() {
+    if (!this.canvasEl) return;
+    this.canvasEl.width = window.innerWidth;
+    this.canvasEl.height = window.innerHeight;
+  }
+
+  _startParticles(cfg) {
+    this._stopParticles();
+    if (!this.ctx) return;
+    this._resizeCanvas();
+    window.addEventListener('resize', this._onResize);
+    const w = this.canvasEl.width;
+    const h = this.canvasEl.height;
+    this._particles = [];
+    for (let i = 0; i < cfg.count; i++) {
+      this._particles.push(this._spawnParticle(cfg, w, h, true));
+    }
+    this._lastTs = 0;
+    const loop = (ts) => {
+      this._rafId = requestAnimationFrame(loop);
+      const dt = this._lastTs ? Math.min((ts - this._lastTs) / 1000, 0.1) : 0.016;
+      this._lastTs = ts;
+      this._drawFrame(cfg, dt);
+    };
+    this._rafId = requestAnimationFrame(loop);
+  }
+
+  _stopParticles() {
+    if (this._rafId !== null) {
+      cancelAnimationFrame(this._rafId);
+      this._rafId = null;
+    }
+    window.removeEventListener('resize', this._onResize);
+    this._particles = [];
+    if (this.ctx && this.canvasEl) {
+      this.ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height);
+    }
+  }
+
+  /**
+   * Create one particle. When `anywhere` is true the particle is scattered
+   * across the screen (initial fill); otherwise it starts just off-screen on
+   * the edge it enters from.
+   */
+  _spawnParticle(cfg, w, h, anywhere) {
+    const mode = cfg.mode || 'fall';
+    const isAccent = !!(cfg.accents && Math.random() < (cfg.accentRatio || 0.08));
+    const p = {
+      x: anywhere ? Math.random() * w : (mode === 'drift' ? -40 : Math.random() * w),
+      y: anywhere || mode === 'drift' ? Math.random() * h : (mode === 'rise' ? h + 30 : -30),
+      size: 0,
+      speed: 0,
+      phase: Math.random() * Math.PI * 2,
+      sway: 15 + Math.random() * 25,
+      rot: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 2,
+      alpha: 0,
+      color: null,
+      glyph: null
+    };
+    if (isAccent) {
+      // Larger emoji drifting slowly among the base particles (snowman, ghost, ...)
+      p.glyph = cfg.accents[Math.floor(Math.random() * cfg.accents.length)];
+      p.size = 20 + Math.random() * 12;
+      p.speed = 10 + Math.random() * 10;
+      p.alpha = 0.3 + Math.random() * 0.2;
+      p.sway = 8 + Math.random() * 10;
+      return p;
+    }
+    p.color = cfg.colors ? cfg.colors[Math.floor(Math.random() * cfg.colors.length)] : null;
+    if (cfg.kind === 'snow') {
+      p.size = 1 + Math.random() * 2.5;
+      p.speed = 15 + Math.random() * 30;
+      p.alpha = 0.15 + Math.random() * 0.35;
+    } else if (cfg.kind === 'confetti') {
+      p.size = 3 + Math.random() * 4;
+      p.speed = 20 + Math.random() * 30;
+      p.alpha = 0.2 + Math.random() * 0.3;
+    } else {
+      p.glyph = cfg.glyphs ? cfg.glyphs[Math.floor(Math.random() * cfg.glyphs.length)] : null;
+      p.size = 10 + Math.random() * 8;
+      p.speed = 12 + Math.random() * 18;
+      p.alpha = (cfg.alpha || 0.5) * (0.6 + Math.random() * 0.4);
+    }
+    if (mode === 'drift') p.speed = 8 + Math.random() * 12;
+    return p;
+  }
+
+  _drawFrame(cfg, dt) {
+    const ctx = this.ctx;
+    const w = this.canvasEl.width;
+    const h = this.canvasEl.height;
+    const mode = cfg.mode || 'fall';
+    ctx.clearRect(0, 0, w, h);
+    for (let i = 0; i < this._particles.length; i++) {
+      const p = this._particles[i];
+      p.phase += dt;
+      if (mode === 'rise') {
+        p.y -= p.speed * dt;
+        p.x += Math.sin(p.phase) * p.sway * dt;
+      } else if (mode === 'drift') {
+        p.x += p.speed * dt;
+        p.y += Math.sin(p.phase) * 10 * dt;
+      } else {
+        p.y += p.speed * dt;
+        p.x += Math.sin(p.phase) * p.sway * dt;
+      }
+      p.rot += p.rotSpeed * dt;
+      const off = 40;
+      const gone = mode === 'rise' ? p.y < -off : mode === 'drift' ? p.x > w + off : p.y > h + off;
+      if (gone) {
+        this._particles[i] = this._spawnParticle(cfg, w, h, false);
+        continue;
+      }
+      ctx.globalAlpha = p.alpha;
+      if (p.glyph) {
+        // Emoji/char particles: base glyphs and larger accents (snowman, ghost, ...)
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(Math.sin(p.phase) * 0.3);
+        ctx.font = `${Math.round(p.size)}px serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        if (p.color) ctx.fillStyle = p.color;
+        ctx.fillText(p.glyph, 0, 0);
+        ctx.restore();
+      } else if (cfg.kind === 'snow') {
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+        ctx.restore();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+// --- DisplaySync (dual-screen support) ---
+
+// Display modes for the two-TV setup (key 7 cycles):
+//   mirror     — both screens show the same content
+//   clocktimer — screen 1 shows the timer, screen 2 a dedicated big clock
+//   split      — dual-timer mode with one timer fullscreen per screen
+const DISPLAY_MODES = ['mirror', 'clocktimer', 'split'];
+const DISPLAY_MODE_LABELS = {
+  mirror: 'Mirror',
+  clocktimer: 'Clock + Timer',
+  split: 'Split Timers'
+};
+const DISPLAY_MODE_STORAGE_KEY = 'bjj-timer-display-mode';
+
+/**
+ * Return the display mode after `mode` in the cycle.
+ * Unknown input starts the cycle at the first mode.
+ * @param {string} mode
+ * @returns {string}
+ */
+function nextDisplayMode(mode) {
+  const idx = DISPLAY_MODES.indexOf(mode);
+  return DISPLAY_MODES[(idx + 1) % DISPLAY_MODES.length];
+}
+
+// Elements of the primary's DOM mirrored to secondary displays. These are
+// deliberately small leaves (the timer digits, the status bar, ...) so a tick
+// only re-sends and re-parses the few elements that actually changed. The
+// wall clock, class-progress canvas, and holiday canvas are NOT synced —
+// secondaries render those locally (they're derived from wall time).
+const SYNC_SECTION_IDS = [
+  'preset-label', 'round-timer', 'rest-timer', 'round-counter',
+  'round-timer-2', 'rest-timer-2',
+  'overlay', 'edit-instruction-bar', 'prep-overlay', 'screen-flash',
+  'round-list', 'next-class-display', 'status-bar', 'schedule-display',
+  'stealth-hint', 'temperature'
+];
+
+// Containers whose class/style attributes carry layout state (dual mode,
+// paused grayscale, time-setting) but whose children are synced above.
+const SYNC_ATTR_IDS = [
+  'timer-area', 'dual-timer-container', 'timer-panel-1', 'timer-panel-2'
+];
+
+const SYNC_HEARTBEAT_MS = 10000;
+const SYNC_DEBOUNCE_MS = 40;
+
+/**
+ * Serialize the synced parts of a document into a snapshot object.
+ * @param {Document} doc
+ * @param {function} getMeta - Returns non-DOM state to include (mode, stealth, ...)
+ * @param {string} sessionId
+ * @returns {Object}
+ */
+function buildSyncSnapshot(doc, getMeta, sessionId) {
+  const sections = {};
+  for (const id of SYNC_SECTION_IDS) {
+    const el = doc.getElementById(id);
+    if (el) sections[id] = el.outerHTML;
+  }
+  const attrs = {};
+  for (const id of SYNC_ATTR_IDS) {
+    const el = doc.getElementById(id);
+    if (el) attrs[id] = { class: el.getAttribute('class') || '', style: el.getAttribute('style') || '' };
+  }
+  return {
+    sessionId,
+    sentAt: Date.now(),
+    flashSequence: Number(doc.getElementById('screen-flash')?.dataset.flashSequence || 0),
+    bodyClass: doc.body.className,
+    sections,
+    attrs,
+    meta: getMeta ? getMeta() : {}
+  };
+}
+
+/**
+ * Update an existing element in place from serialized outerHTML: attributes
+ * are reconciled and children replaced, but the element object itself is
+ * kept so cached references (Renderer, stealth handling) stay valid.
+ * @param {Element} el
+ * @param {string} html - outerHTML of the same element from the primary
+ */
+// Relay markup is an untrusted wire format. Keep only the inert tags and
+// attributes used by the kiosk; never copy handlers, URLs, custom elements,
+// embedded documents or executable SVG into the live document.
+function safeSyncStyle(doc, css) {
+  const probe = doc.createElement('span');
+  probe.style.cssText = typeof css === 'string' ? css : '';
+  for (const name of Array.from(probe.style)) {
+    const value = probe.style.getPropertyValue(name);
+    if (/url|image-set|expression|@|\\|\/\*/i.test(value) || name.startsWith('--')) probe.style.removeProperty(name);
+  }
+  return probe.style.cssText;
+}
+
+function syncElementFromHtml(el, html) {
+  if (typeof html !== 'string') return;
+  const tpl = el.ownerDocument.createElement('template');
+  tpl.innerHTML = html;
+  const src = tpl.content.firstElementChild;
+  if (!src || tpl.content.childElementCount !== 1 || src.id !== el.id || src.localName !== el.localName) return;
+  const tags = new Set(['div', 'span', 'b', 'strong', 'em', 'small', 'br', 'p', 'img', 'svg', 'path', 'circle', 'line', 'polyline', 'polygon', 'rect', 'g']);
+  if (!tags.has(src.localName)) return;
+  const attributes = new Set(['class', 'style', 'title', 'role', 'aria-hidden', 'aria-label', 'width', 'height', 'viewbox', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'd', 'cx', 'cy', 'r', 'x', 'y', 'x1', 'x2', 'y1', 'y2', 'rx', 'points', 'opacity', 'alt', 'data-flash-sequence']);
+  for (const node of [src, ...src.querySelectorAll('*')]) {
+    if (!tags.has(node.localName)) { node.remove(); continue; }
+    for (const attr of Array.from(node.attributes)) {
+      if (attr.name === 'id') continue;
+      if (attr.name === 'src' && node.localName === 'img' && attr.value === 'paco.png') continue;
+      if (!attributes.has(attr.name.toLowerCase()) || /url\s*\(|expression|javascript:|\\/i.test(attr.value)) node.removeAttribute(attr.name);
+      else if (attr.name === 'style') node.setAttribute('style', safeSyncStyle(el.ownerDocument, attr.value));
+    }
+  }
+  for (const attr of Array.from(el.attributes)) {
+    if (!src.hasAttribute(attr.name)) el.removeAttribute(attr.name);
+  }
+  for (const attr of Array.from(src.attributes)) {
+    if (el.getAttribute(attr.name) !== attr.value) el.setAttribute(attr.name, attr.value);
+  }
+  if (el.innerHTML !== src.innerHTML) el.replaceChildren(...src.childNodes);
+}
+
+/**
+ * Apply a snapshot to a secondary document. `applied` remembers what was
+ * last written per element so unchanged sections are skipped.
+ * @param {Document} doc
+ * @param {Object} snap
+ * @param {Object} applied - Mutable cache: { sections: {}, attrs: {} }
+ */
+function applySyncSnapshot(doc, snap, applied) {
+  if (!snap || typeof snap !== 'object') return;
+  applied.sections = applied.sections || {};
+  applied.attrs = applied.attrs || {};
+  const sections = snap.sections || {};
+  for (const id of Object.keys(sections)) {
+    if (!SYNC_SECTION_IDS.includes(id)) continue;
+    if (applied.sections[id] === sections[id]) continue;
+    const el = doc.getElementById(id);
+    if (!el) continue;
+    syncElementFromHtml(el, sections[id]);
+    applied.sections[id] = sections[id];
+  }
+  const attrs = snap.attrs || {};
+  for (const id of Object.keys(attrs)) {
+    if (!SYNC_ATTR_IDS.includes(id) || !attrs[id] || typeof attrs[id].class !== 'string') continue;
+    const key = `${attrs[id].class} ${attrs[id].style}`;
+    if (applied.attrs[id] === key) continue;
+    const el = doc.getElementById(id);
+    if (!el) continue;
+    if (attrs[id].class) el.setAttribute('class', attrs[id].class); else el.removeAttribute('class');
+    if (attrs[id].style) el.setAttribute('style', safeSyncStyle(doc, attrs[id].style)); else el.removeAttribute('style');
+    applied.attrs[id] = key;
+  }
+  doc.body.className = typeof snap.bodyClass === 'string' ? snap.bodyClass : 'timer-idle';
+  if (Number.isSafeInteger(snap.flashSequence) && snap.flashSequence > 0 &&
+      (applied.sessionId !== snap.sessionId || applied.flashSequence !== snap.flashSequence)) {
+    const flash = doc.getElementById('screen-flash');
+    if (flash) {
+      flash.classList.remove('active');
+      void flash.offsetWidth;
+      flash.classList.add('active');
+    }
+  }
+  applied.sessionId = snap.sessionId;
+  applied.flashSequence = snap.flashSequence;
+}
+
+/**
+ * Relays UI state from the primary kiosk window to secondary display windows
+ * through the update server (port 3001), which fans snapshots out over SSE.
+ * An HTTP relay is used instead of BroadcastChannel because the two kiosk
+ * windows run as separate Chromium instances with separate profiles.
+ */
+class DisplaySyncManager {
+  constructor() {
+    this._sessionId = null;
+    this._lastPayload = '';
+    this._lastSentAt = 0;
+    this._pending = null;
+    this._observer = null;
+    this._getMeta = null;
+    this._timerId = null;
+    this._es = null;
+    this._keyListeners = null;
+    this._keyQueue = Promise.resolve();
+    this._stopped = false;
+  }
+
+  /**
+   * Disconnect observers, timers, event streams and relayed key listeners.
+   */
+  stop() {
+    this._stopped = true;
+    if (this._observer) { this._observer.disconnect(); this._observer = null; }
+    if (this._timerId !== null) { clearInterval(this._timerId); this._timerId = null; }
+    if (this._pending !== null) { clearTimeout(this._pending); this._pending = null; }
+    if (this._es) { if (typeof this._es.close === 'function') this._es.close(); this._es = null; }
+    if (this._keyListeners) {
+      document.removeEventListener('keydown', this._keyListeners.down);
+      document.removeEventListener('keyup', this._keyListeners.up);
+      window.removeEventListener('blur', this._keyListeners.clearEnter);
+      document.removeEventListener('visibilitychange', this._keyListeners.clearEnter);
+      this._keyListeners = null;
+    }
+  }
+
+  /**
+   * Start broadcasting UI snapshots. A MutationObserver on the synced
+   * elements triggers a (debounced) broadcast whenever they change, and a
+   * 10s heartbeat keeps late-joining secondaries fresh. Falls back to
+   * polling when MutationObserver is unavailable.
+   * @param {function} getMeta - Returns non-DOM state to include (mode, stealth, ...)
+   */
+  startPrimary(getMeta) {
+    this._sessionId = String(Date.now()) + '-' + Math.random().toString(36).slice(2);
+    this._getMeta = getMeta;
+
+    if (typeof MutationObserver === 'function') {
+      this._observer = new MutationObserver(() => this.requestBroadcast());
+      const opts = { childList: true, subtree: true, attributes: true, characterData: true };
+      for (const id of SYNC_SECTION_IDS.concat(SYNC_ATTR_IDS)) {
+        const el = document.getElementById(id);
+        if (el) this._observer.observe(el, opts);
+      }
+      this._observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+      this._timerId = setInterval(() => this._broadcast(true), SYNC_HEARTBEAT_MS);
+    } else {
+      this._timerId = setInterval(() => this._broadcast(false), 250);
+    }
+    this._broadcast(true);
+
+    // Replay keys pressed on a secondary window (relayed via the server) as if
+    // they were typed here — keeps the keyboard working whichever kiosk
+    // window happens to hold focus.
+    const es = new EventSource('http://localhost:3001/key-events');
+    this._es = es;
+    es.onmessage = (e) => {
+      let data;
+      try { data = JSON.parse(e.data); } catch (err) { return; }
+      if (!data || typeof data !== 'object') return;
+      if (data.type === 'press' && Number.isFinite(data.heldMs) && data.heldMs >= 0) {
+        const down = new KeyboardEvent('keydown', { key: data.key, code: data.code, cancelable: true });
+        Object.defineProperty(down, 'relayHeldMs', { value: data.heldMs });
+        document.dispatchEvent(down);
+        document.dispatchEvent(new KeyboardEvent('keyup', { key: data.key, code: data.code, cancelable: true }));
+        return;
+      }
+      if (data.type !== 'keydown' && data.type !== 'keyup') return;
+      document.dispatchEvent(new KeyboardEvent(data.type, {
+        key: data.key, code: data.code, ctrlKey: !!data.ctrlKey,
+        repeat: !!data.repeat, cancelable: true
+      }));
+    };
+  }
+
+  /**
+   * Coalesce a burst of DOM mutations (one tick touches several elements)
+   * into a single broadcast.
+   */
+  requestBroadcast() {
+    if (this._pending !== null) return;
+    this._pending = setTimeout(() => {
+      this._pending = null;
+      this._broadcast(false);
+    }, SYNC_DEBOUNCE_MS);
+  }
+
+  /**
+   * Serialize and POST the current snapshot. Unchanged payloads are skipped
+   * unless `force` is set (heartbeat) or the last send is older than the
+   * heartbeat interval.
+   * @param {boolean} force
+   */
+  _broadcast(force) {
+    const snapshot = buildSyncSnapshot(document, this._getMeta, this._sessionId);
+    const comparison = JSON.stringify({ ...snapshot, sentAt: 0 });
+    const payload = JSON.stringify(snapshot);
+    const now = Date.now();
+    if (!force && comparison === this._lastPayload && now - this._lastSentAt < SYNC_HEARTBEAT_MS) return;
+    this._lastPayload = comparison;
+    this._lastSentAt = now;
+    fetch('http://localhost:3001/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Update-Request': APP_SETTINGS.relay.sharedKey },
+      body: payload
+    }).catch(() => {});
+  }
+
+  /**
+   * Subscribe to primary snapshots. EventSource auto-reconnects if the
+   * server restarts, and the server replays the last snapshot on connect.
+   * @param {function} onSnapshot - Called with each parsed snapshot
+   */
+  startSecondary(onSnapshot) {
+    const status = document.getElementById('sync-status');
+    let receivedAt = null;
+    let hasConnected = false;
+    const showStale = () => {
+      const stale = hasConnected && (receivedAt === null || performance.now() - receivedAt >= SYNC_HEARTBEAT_MS * 2.5);
+      if (status) status.hidden = !stale;
+      document.documentElement.classList.toggle('sync-stale', stale);
+    };
+    showStale();
+    this._timerId = setInterval(showStale, 1000);
+    const es = new EventSource('http://localhost:3001/sync-events');
+    this._es = es;
+    es.onerror = () => { receivedAt = null; showStale(); };
+    es.onmessage = (e) => {
+      let snap;
+      try { snap = JSON.parse(e.data); } catch (err) { return; }
+      if (!snap || typeof snap !== 'object' || !Number.isFinite(snap.sentAt) ||
+          Math.abs(Date.now() - snap.sentAt) > SYNC_HEARTBEAT_MS * 2.5) return;
+      receivedAt = performance.now();
+      hasConnected = true;
+      onSnapshot(snap);
+      showStale();
+    };
+
+    // Deliver events in order. Hold-capable keys (OK / ▶ / Menu) travel as one
+    // completed gesture so a slow/lost keyup request cannot invent a long
+    // press on the primary.
+    let enterDown = null;
+    let enterKey = null;
+    const clearEnter = () => { enterDown = null; enterKey = null; };
+    const isHoldKey = (e) => e.key === 'Enter' || e.code === 'NumpadEnter' || e.key === ' ' || e.code === 'Space' || e.key === 'Escape';
+    const relay = (data) => {
+      this._keyQueue = this._keyQueue.then(async () => {
+        if (this._stopped) return;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        try {
+          await fetch('http://localhost:3001/keys', {
+            method: 'POST', signal: controller.signal,
+            headers: { 'Content-Type': 'application/json', 'X-Update-Request': APP_SETTINGS.relay.sharedKey },
+            body: JSON.stringify(data)
+          });
+        } catch (e) { /* The next gesture can still be delivered. */ }
+        finally { clearTimeout(timeout); }
+      });
+    };
+    const dataFor = (type, e) => ({ type, key: e.key, code: e.code, ctrlKey: e.ctrlKey, repeat: e.repeat });
+    const down = (e) => {
+      e.preventDefault();
+      if (isHoldKey(e)) {
+        if (!e.repeat && enterDown === null) { enterDown = performance.now(); enterKey = e.key; }
+      } else relay(dataFor('keydown', e));
+    };
+    const up = (e) => {
+      if (isHoldKey(e)) {
+        const heldMs = enterDown === null || enterKey !== e.key ? null : performance.now() - enterDown;
+        // Lost releases or suspended pages must not invent a long press.
+        if (heldMs !== null && heldMs >= 0 && heldMs <= 10000) relay({ ...dataFor('press', e), heldMs });
+        clearEnter();
+      } else relay(dataFor('keyup', e));
+    };
+    this._keyListeners = { down, up, clearEnter };
+    document.addEventListener('keydown', down);
+    document.addEventListener('keyup', up);
+    window.addEventListener('blur', clearEnter);
+    document.addEventListener('visibilitychange', clearEnter);
+  }
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { formatTime, parseTimeInput, isNumeric, generateRoundDurations, DEFAULT_CONFIG, APP_SETTINGS, applyConfigSettings, PHASES, STORAGE_KEY, StorageManager, createTimerState, TimerEngine, AudioManager, Renderer, ClassProgressRenderer, OverlayManager, InputHandler, ClassPresetManager, ScheduleManager, WeatherManager, VALID_DAYS, VALID_CLASS_TYPES, SCHEDULE_STORAGE_KEY };
+  module.exports = { formatTime, isValidSeconds, isNumeric, escapeHtml, generateRoundDurations, DEFAULT_CONFIG, APP_SETTINGS, applyConfigSettings, PHASES, prepBeepSecond, STORAGE_KEY, StorageManager, createTimerState, TimerEngine, AudioManager, ICONS, presetIcon, TRAINING_MODES, Renderer, ClassProgressRenderer, OverlayManager, InputHandler, ClassPresetManager, ScheduleManager, WeatherManager, HolidayThemeManager, HOLIDAY_THEMES, getActiveHoliday, VALID_DAYS, VALID_CLASS_TYPES, SCHEDULE_STORAGE_KEY, SYNCED_SCHEDULE_FILE, DISPLAY_MODES, DISPLAY_MODE_LABELS, DISPLAY_MODE_STORAGE_KEY, nextDisplayMode, DisplaySyncManager, SYNC_SECTION_IDS, SYNC_ATTR_IDS, buildSyncSnapshot, applySyncSnapshot, syncElementFromHtml, HOLD_MS, TRAINING_MENU_ITEMS, moveSelection, stepNumericBuffer };
 }
 
 // --- Application Initialization ---
 // Only run in browser (not in Node.js test environment)
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-  document.addEventListener('DOMContentLoaded', () => {
-    // --- Debug mode ---
+
+  /**
+   * Boot a secondary display window (?screen=2). Runs no timer engines and no
+   * input handling — timer UI arrives as DOM snapshots from the primary via
+   * the sync relay, while wall-clock/class-progress/holiday rendering (all
+   * derived from local time and config.json) runs locally.
+   */
+  function initSecondaryDisplay(urlParams) {
+    const renderer = new Renderer();
+    const presetManager = new ClassPresetManager();
+    const classProgress = new ClassProgressRenderer();
+    document.body.classList.add('timer-idle');
+
+    const scheduleManager = new ScheduleManager(
+      presetManager,
+      (activeClass) => {
+        classProgress.setActiveClass(APP_SETTINGS.scheduleEnabled ? activeClass : null);
+      },
+      () => {}
+    );
+    scheduleManager.loadConfig().then(() => scheduleManager.startPolling());
+
+    const holidayTheme = new HolidayThemeManager();
+    const forcedHoliday = urlParams.get('holiday');
+    if (forcedHoliday && HOLIDAY_THEMES[forcedHoliday]) {
+      holidayTheme._forcedHoliday = forcedHoliday;
+    }
+    holidayTheme.start();
+
+    renderer.updateClockDisplay();
+    const clockId = setInterval(() => {
+      renderer.updateClockDisplay();
+      classProgress.draw();
+    }, 1000);
+
+    const applied = { sections: {}, attrs: {} };
+    let seenSessionId = null;
+    const sync = new DisplaySyncManager();
+    sync.startSecondary((snap) => {
+      // Primary reloaded (e.g. after a git update) — reload to match its code
+      if (seenSessionId && snap.sessionId !== seenSessionId) {
+        window.location.reload();
+        return;
+      }
+      seenSessionId = snap.sessionId;
+
+      applySyncSnapshot(document, snap, applied);
+
+      const meta = snap.meta || {};
+      const root = document.documentElement;
+      const mode = DISPLAY_MODES.includes(meta.displayMode) ? meta.displayMode : 'mirror';
+      DISPLAY_MODES.forEach(m => root.classList.remove('mode-' + m));
+      root.classList.add('mode-' + mode);
+
+      if (typeof meta.scheduleEnabled === 'boolean' && meta.scheduleEnabled !== APP_SETTINGS.scheduleEnabled) {
+        APP_SETTINGS.scheduleEnabled = meta.scheduleEnabled;
+        classProgress.setActiveClass(meta.scheduleEnabled ? scheduleManager.getActiveClass(new Date()) : null);
+      }
+      if (typeof meta.holidayThemeEnabled === 'boolean' && meta.holidayThemeEnabled !== APP_SETTINGS.holidayThemeEnabled) {
+        APP_SETTINGS.holidayThemeEnabled = meta.holidayThemeEnabled;
+        holidayTheme.refresh();
+      }
+      // Stealth hides locally-rendered elements (clock, progress circle);
+      // synced sections already carry the primary's inline visibility styles
+      renderer.stealth = !!meta.stealth;
+      renderer.applyStealth(meta.phase, meta.phase2);
+    });
+
+    // Handle for tests/tooling to shut the instance down cleanly
+    window.__bjjApp = {
+      teardown() {
+        clearInterval(clockId);
+        scheduleManager.stopPolling();
+        holidayTheme.stop();
+        sync.stop();
+        window.__bjjApp = null;
+      }
+    };
+  }
+
+  document.addEventListener('DOMContentLoaded', async () => {
     const urlParams = new URLSearchParams(window.location.search);
+
+    // --- Dual-screen support (opt-in only) ---
+    // Plain URL = original single-screen app, untouched by any of this.
+    // ?screen=2 boots the display-only secondary window; ?dual=1 makes the
+    // primary broadcast state and enables the key-7 display mode cycle.
+    const isSecondaryDisplay = urlParams.get('screen') === '2';
+    const dualScreenEnabled = urlParams.get('dual') === '1';
+    if (isSecondaryDisplay) {
+      document.documentElement.classList.add('screen2');
+      initSecondaryDisplay(urlParams);
+      return;
+    }
+    if (dualScreenEnabled) {
+      document.documentElement.classList.add('screen1');
+    }
+
+    // --- Debug mode ---
     const isDebug = urlParams.get('debug') === 'true';
     let debugScheduleEntry = null;
 
@@ -3848,7 +4824,18 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       }
     }
 
-    // 1. Load persisted config
+    // Load defaults before constructing either timer (including saved Split mode).
+    let initialConfig;
+    const configAbort = new AbortController();
+    const configTimeout = setTimeout(() => configAbort.abort(), 5000);
+    try {
+      const response = await fetch('config.json', { cache: 'no-store', signal: configAbort.signal });
+      if (response.ok) initialConfig = await response.json();
+    } catch (e) { /* Offline boot uses validated storage/built-in defaults. */ }
+    finally { clearTimeout(configTimeout); }
+    applyConfigSettings(initialConfig);
+
+    // 1. Saved values take precedence over the now-loaded defaults.
     const config = StorageManager.load();
 
     // 2. Create timer state from config
@@ -3857,8 +4844,10 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     // 3. Create UI and audio components
     const renderer = new Renderer();
     const audioManager = new AudioManager();
-    // Eagerly create AudioContext so it's ready for end-of-class ring
+    // Eagerly create AudioContext so it's ready for end-of-class ring, and
+    // fetch the bell files so the first ring does not wait on the network
     audioManager._ensureContext();
+    audioManager.preload();
     const presetManager = new ClassPresetManager();
     const classProgress = new ClassProgressRenderer();
 
@@ -3866,15 +4855,16 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     document.body.classList.add('timer-idle');
 
     // 4. Pending class type for deferred preset loading (Req 19.3, 19.4)
-    let pendingClassType = null;
+    let pendingClass = null;
     let hadActiveClass = false; // Track for end-of-class ring
+    let lastActiveClassKey = null; // Preserve ring identity across schedule toggles
     let _inputHandlerRef = null; // Set after InputHandler is created
 
     // 5. Create TimerEngine with tick and phase-change callbacks
     const engine = new TimerEngine(state,
-      // onTick — update displays each second
+      // onTick — update displays each second (the wall clock has its own
+      // one-second interval, so it is not repainted here)
       (s) => {
-        renderer.updateClockDisplay();
         if (s.phase === PHASES.ROUND) {
           renderer.updateRoundDisplay(s.remainingSec, true);
           const restIdx = s.currentRound - 1;
@@ -3891,7 +4881,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         renderer.updateRoundCounter(s.currentRound, s.roundDurations ? s.roundDurations.length : s.config.numRounds);
         // Update round list if training preset is active
         if (s.roundDurations) {
-          renderer.updateRoundList(s.roundDurations, s.currentRound, s._presetName, s.restDurations, s.config.restDurationSec, renderer.getRemainingClassSec());
+          renderer.updateRoundList(s.roundDurations, s.currentRound, s._presetName, s.restDurations, s.config.restDurationSec, renderer.getRemainingClassSec(), s.remainingSec, s.phase);
         }
         // Re-apply stealth visibility each tick (rest shows/hides based on phase)
         if (renderer.stealth) renderer.applyStealth(s.phase);
@@ -3899,14 +4889,19 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       // onPhaseChange — handle transitions and deferred preset loading
       (s, oldPhase, newPhase) => {
         if (newPhase === PHASES.ROUND) {
-          audioManager.playRoundStartFanfare();
+          engine.emitTransitionCue(() => audioManager.playRoundStartFanfare());
         }
         if (oldPhase === PHASES.PREP && newPhase === PHASES.ROUND) {
           renderer.hidePrepCountdown();
         }
-        // Hide rounds-over overlay when starting a new session
-        if (oldPhase === PHASES.IDLE && newPhase === PHASES.PREP) {
-          renderer.hideRoundsOver();
+        // Show the prep overlay immediately on session start (the first tick
+        // would otherwise leave it blank for a second and never show the full value)
+        if (newPhase === PHASES.PREP) {
+          renderer.showPrepCountdown(s.remainingSec);
+        }
+        // Hide the prep overlay if the session is stopped mid-prep
+        if (newPhase === PHASES.IDLE) {
+          renderer.hidePrepCountdown();
         }
         // "Rounds Over" — go to ready state (enlarged) instead of showing overlay
         if (newPhase === PHASES.IDLE && oldPhase === PHASES.ROUND && !s._cancelledByUser) {
@@ -3915,39 +4910,24 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
           renderer.updateRestDisplay(s.config.restDurationSec, false);
           renderer.updateRoundCounter(0, rd ? rd.length : s.config.numRounds);
         }
-        s._cancelledByUser = false;
-        // Restore config after quick timer ends
-        if (newPhase === PHASES.IDLE && s._quickTimerRestore) {
-          const r = s._quickTimerRestore;
-          s.config.roundDurationSec = r.roundDurationSec;
-          s.config.restDurationSec = r.restDurationSec;
-          s.config.numRounds = r.numRounds;
-          s.config.prepDurationSec = r.prepDurationSec;
-          s.remainingSec = r.roundDurationSec;
-          s.roundDurations = r.roundDurations;
-          s.restDurations = r.restDurations;
-          s._presetName = r.presetName || null;
-          s._quickTimerRestore = null;
-          renderer.clearQuickTimerMode();
-          renderer.updatePresetLabel(s._presetName);
-          renderer.updateRoundDisplay(s.config.roundDurationSec, false);
-          renderer.updateRestDisplay(s.config.restDurationSec, false);
-          renderer.updateRoundCounter(0, s.config.numRounds);
-        }
         // When session stops and there's a pending class preset, apply it (Req 19.3, 19.4)
-        if (newPhase === PHASES.IDLE && pendingClassType) {
-          const preset = presetManager.getPreset(pendingClassType);
+        if (newPhase === PHASES.IDLE && pendingClass) {
+          const preset = pendingClass.classType === 'open_mat' ? APP_SETTINGS.competitionPresets['Blue Belt'] : presetManager.getPreset(pendingClass.classType);
           if (preset) {
             s.config.roundDurationSec = preset.roundDurationSec;
             s.config.restDurationSec = preset.restDurationSec;
             s.config.numRounds = preset.numRounds;
             s.remainingSec = preset.roundDurationSec;
+            s.roundDurations = null;
+            s.restDurations = null;
+            s._presetName = pendingClass.title;
+            renderer.updatePresetLabel(s._presetName);
             StorageManager.save(s.config);
             renderer.updateRoundDisplay(s.config.roundDurationSec, false);
             renderer.updateRestDisplay(s.config.restDurationSec, false);
             renderer.updateRoundCounter(0, s.config.numRounds);
           }
-          pendingClassType = null;
+          pendingClass = null;
         }
         // Reset round list to preview when session ends (preserve if preset active)
         if (newPhase === PHASES.IDLE) {
@@ -3957,8 +4937,11 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
             renderer.hideRoundList();
           }
         }
-        // Update status bar based on new phase
-        if (newPhase === PHASES.IDLE) {
+        // Update status bar based on new phase (unless the user is mid-edit —
+        // time-setting mode stays active across phase changes)
+        if (_inputHandlerRef && _inputHandlerRef._timeSettingMode) {
+          renderer.updateStatusBar('editing');
+        } else if (newPhase === PHASES.IDLE) {
           if (_inputHandlerRef && _inputHandlerRef._ready) {
             renderer.updateStatusBar('ready');
           } else {
@@ -3975,6 +4958,8 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         } else {
           document.body.classList.toggle('timer-idle', newPhase === PHASES.IDLE && !state.paused);
         }
+        // Clear the cancel flag last — both guards above read it
+        s._cancelledByUser = false;
       }
     );
 
@@ -3984,9 +4969,19 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       const currentPhase = state.phase;
       const alert = originalTick();
 
+      if (alert.type === 'end_round' || alert.type === 'end_rest') {
+        engine.emitTransitionCue(() => {
+          if (alert.type === 'end_round') audioManager.playEndOfRoundBeep();
+          else audioManager.playEndOfRestBeep();
+          renderer.applyScreenFlash();
+        });
+      }
+      if (engine.silent) return alert;
+
       // Prep countdown beeps
-      if (currentPhase === PHASES.PREP && alert.remainingSec >= 0 && alert.remainingSec <= state.config.prepDurationSec - 1) {
-        audioManager.playPrepBeep(alert.remainingSec + 1, state.config.prepDurationSec);
+      const prepSecond = prepBeepSecond(currentPhase, alert.remainingSec, state.config.prepDurationSec);
+      if (prepSecond !== null) {
+        audioManager.playPrepBeep(prepSecond, state.config.prepDurationSec);
       }
 
       // Round/rest countdown alerts
@@ -3994,13 +4989,6 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         audioManager.playCountdownBeep();
         if (state.phase === PHASES.ROUND) renderer.applyFlash(renderer.roundTimerEl);
         if (state.phase === PHASES.REST) renderer.applyFlash(renderer.restTimerEl);
-      } else if (alert.type === 'end_round') {
-        console.log('[AUDIO] end_round alert — playing bell');
-        audioManager.playEndOfRoundBeep();
-        renderer.applyScreenFlash();
-      } else if (alert.type === 'end_rest') {
-        audioManager.playEndOfRestBeep();
-        renderer.applyScreenFlash();
       }
 
       // Uplifting fanfare when transitioning from PREP to ROUND — handled in onPhaseChange
@@ -4011,7 +4999,80 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     // 7. Create overlay and input handler
     const overlayManager = new OverlayManager();
     const inputHandler = new InputHandler(engine, overlayManager, renderer, audioManager, state);
+    // Everything the app schedules or subscribes to, so the instance can be
+    // shut down (used by the boot tests; harmless in the kiosk)
+    const intervals = [];
+    let displaySync = null;
+    let weatherManager = null;
+
+    // Holiday decorations (off by default; toggled from the main menu).
+    // ?holiday=<christmas|newyear|halloween|july4|thanksgiving|valentine> forces
+    // a theme for previewing outside its date range.
+    const holidayTheme = new HolidayThemeManager();
+    const forcedHoliday = urlParams.get('holiday');
+    if (forcedHoliday && HOLIDAY_THEMES[forcedHoliday]) {
+      holidayTheme._forcedHoliday = forcedHoliday;
+    }
+    holidayTheme.start();
+    overlayManager._onHolidayToggle = () => holidayTheme.refresh();
+    inputHandler._holidayTheme = holidayTheme; // Ctrl+H cycles theme previews
     _inputHandlerRef = inputHandler;
+    renderer.phaseProvider = () => [state.phase, inputHandler._dualState?.phase];
+
+    // 7b. Dual-screen display mode (only with ?dual=1: key 7 cycles modes and
+    // state is broadcast to the secondary window via the sync relay). Without
+    // the flag none of this runs and the app behaves exactly as single-screen.
+    const initDisplayMode = () => {
+      if (!dualScreenEnabled) return;
+      renderer.showScreensKey = true;
+      if (state.phase === PHASES.IDLE) renderer.updateStatusBar('clock');
+      let displayMode = null;
+      let displayModeToastTimer = null;
+      const setDisplayMode = (mode, opts) => {
+        let requested = DISPLAY_MODES.includes(mode) ? mode : 'mirror';
+        if (requested === 'split' && !inputHandler._dualMode && state.phase !== PHASES.IDLE) {
+          if (displayMode !== null) return;
+          requested = 'mirror';
+        }
+        displayMode = requested;
+        try {
+          localStorage.setItem(DISPLAY_MODE_STORAGE_KEY, displayMode);
+        } catch (e) {
+          // localStorage unavailable — mode applies for this session only
+        }
+        const root = document.documentElement;
+        DISPLAY_MODES.forEach(m => root.classList.remove('mode-' + m));
+        root.classList.add('mode-' + displayMode);
+        // Split mode shows one dual-mode panel per screen, so it needs dual timers
+        if (displayMode === 'split' && !inputHandler._dualMode) {
+          inputHandler._activateDualMode();
+        }
+        if (!opts || !opts.silent) {
+          const toast = document.getElementById('display-mode-toast');
+          if (toast) {
+            toast.textContent = `Screens: ${DISPLAY_MODE_LABELS[displayMode]}`;
+            toast.classList.add('visible');
+            clearTimeout(displayModeToastTimer);
+            displayModeToastTimer = setTimeout(() => toast.classList.remove('visible'), 2000);
+          }
+        }
+      };
+      inputHandler._displayModeCallback = () => setDisplayMode(nextDisplayMode(displayMode));
+      inputHandler._onDualDeactivated = () => {
+        if (displayMode === 'split') setDisplayMode('mirror');
+      };
+      setDisplayMode(readStorage(DISPLAY_MODE_STORAGE_KEY), { silent: true });
+
+      displaySync = new DisplaySyncManager();
+      displaySync.startPrimary(() => ({
+        displayMode,
+        stealth: renderer.stealth,
+        phase: state.phase,
+        phase2: inputHandler._dualState?.phase,
+        scheduleEnabled: APP_SETTINGS.scheduleEnabled,
+        holidayThemeEnabled: APP_SETTINGS.holidayThemeEnabled
+      }));
+    };
 
     // 8. Create ScheduleManager with automatic preset loading (Req 19.1–19.4)
     const scheduleManager = new ScheduleManager(
@@ -4031,11 +5092,16 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         classProgress.setActiveClass(activeClass);
 
         if (activeClass) {
-          if (!hadActiveClass && APP_SETTINGS.audio.classStartSound) {
+          const activeClassKey = JSON.stringify([activeClass.title, classInstant(now, activeClass.startTime).getTime()]);
+          if (activeClassKey !== lastActiveClassKey && APP_SETTINGS.audio.classStartSound) {
             audioManager.playStartOfClassRing();
           }
+          lastActiveClassKey = activeClassKey;
           hadActiveClass = true;
           if (state.phase === PHASES.IDLE) {
+            state.roundDurations = null;
+            state.restDurations = null;
+            renderer.hideRoundList();
             // Open Mat: use Blue Belt competition preset and auto-start
             if (activeClass.classType === 'open_mat') {
               const blueBelt = APP_SETTINGS.competitionPresets['Blue Belt'];
@@ -4070,7 +5136,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
             }
           } else {
             // Defer preset loading until session stops (Req 19.3)
-            pendingClassType = activeClass.classType;
+            pendingClass = activeClass;
           }
         } else {
           if (hadActiveClass) {
@@ -4079,7 +5145,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
             }
             hadActiveClass = false;
           }
-          pendingClassType = null;
+          pendingClass = null;
         }
       },
       // onError
@@ -4092,18 +5158,40 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       }
     );
 
-    // 8b. Wire up key 9 reset: use active class preset or fall back to DEFAULT_CONFIG
+    // 8b. Wire up the schedule overlay (key 9), schedule toggle, and long-press
+    // reset (use active class preset or fall back to DEFAULT_CONFIG)
     inputHandler._scheduleManager = scheduleManager;
+
+    // Remaining class time feeds the round list's overtime badges and the
+    // training/chainsaw default lengths
+    const remainingClassSec = () =>
+      APP_SETTINGS.scheduleEnabled ? scheduleManager.getRemainingClassSec(new Date()) : 0;
+    renderer.remainingClassSecProvider = remainingClassSec;
+    overlayManager.remainingClassSecProvider = remainingClassSec;
+
+    /**
+     * Repaint the class banner and next-class panel (and optionally the
+     * progress ring) from the schedule. No-op while the schedule is disabled.
+     * @param {boolean} withProgress
+     */
+    const refreshScheduleUI = (withProgress) => {
+      if (!APP_SETTINGS.scheduleEnabled) return;
+      const now = new Date();
+      const active = scheduleManager.getActiveClass(now);
+      const next = scheduleManager.getNextClass(now);
+      renderer.updateScheduleDisplay(active, next, null);
+      renderer.updateNextClassDisplay(active ? next : null);
+      if (withProgress) classProgress.setActiveClass(active);
+    };
+
     overlayManager._onScheduleToggle = (enabled) => {
       if (enabled) {
-        const now = new Date();
-        const active = scheduleManager.getActiveClass(now);
-        const next = scheduleManager.getNextClass(now);
-        renderer.updateScheduleDisplay(active, next, null);
-        renderer.updateNextClassDisplay(active ? next : null);
-        classProgress.setActiveClass(active);
+        scheduleManager._lastActiveClassTitle = null;
+        refreshScheduleUI(true);
         scheduleManager.startPolling();
       } else {
+        pendingClass = null;
+        hadActiveClass = false;
         renderer.updateScheduleDisplay(null, null, null);
         renderer.updateNextClassDisplay(null);
         classProgress.setActiveClass(null);
@@ -4135,58 +5223,72 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       ? Promise.resolve().then(() => {
           // Inject debug entry directly into schedule manager
           scheduleManager._schedule = [debugScheduleEntry];
-          const preset = presetManager.getPreset(debugScheduleEntry.classType);
-          if (preset && debugScheduleEntry.classType) {
-            // Apply preset overrides if any exist in config
-          }
           scheduleManager._checkActiveClass();
         })
-      : scheduleManager.loadConfig();
+      : scheduleManager.loadConfig(initialConfig);
 
     initSchedule.then(() => {
-      if (APP_SETTINGS.scheduleEnabled) {
-        const now = new Date();
-        const active = scheduleManager.getActiveClass(now);
-        const next = scheduleManager.getNextClass(now);
-        renderer.updateScheduleDisplay(active, next, null);
-        renderer.updateNextClassDisplay(active ? next : null);
-        classProgress.setActiveClass(active);
-      }
+      initDisplayMode();
+      refreshScheduleUI(true);
       scheduleManager.startPolling();
 
       // 10b. Start weather polling (after config loaded so overrides are applied)
-      const weatherManager = new WeatherManager((tempStr) => {
+      weatherManager = new WeatherManager((tempStr) => {
         renderer.updateTemperature(tempStr);
       });
       weatherManager.start();
     });
 
     // 11. Wall clock update every second
-    setInterval(() => {
+    intervals.push(setInterval(() => {
       renderer.updateClockDisplay();
       classProgress.draw();
-    }, 1000);
+    }, 1000));
 
-    // 12. Re-read config.json every 30 minutes to pick up schedule syncs
-    setInterval(() => {
-      scheduleManager.loadConfig().then(() => {
-        const now = new Date();
-        const active = scheduleManager.getActiveClass(now);
-        const next = scheduleManager.getNextClass(now);
-        renderer.updateScheduleDisplay(active, next, null);
-        renderer.updateNextClassDisplay(active ? next : null);
-        classProgress.setActiveClass(active);
-      });
-    }, 30 * 60 * 1000);
+    // 12. Re-read config.json every 30 minutes to pick up schedule syncs.
+    // refreshScheduleUI honours the schedule toggle, so a disabled schedule
+    // no longer reappears after the reload.
+    intervals.push(setInterval(() => {
+      scheduleManager.loadConfig().then(() => refreshScheduleUI(true));
+    }, 30 * 60 * 1000));
 
     // 13. Refresh schedule and next class displays every 60 seconds
-    setInterval(() => {
-      if (!APP_SETTINGS.scheduleEnabled) return;
-      const now = new Date();
-      const active = scheduleManager.getActiveClass(now);
-      const next = scheduleManager.getNextClass(now);
-      renderer.updateScheduleDisplay(active, next, null);
-      renderer.updateNextClassDisplay(active ? next : null);
-    }, 60000);
+    intervals.push(setInterval(() => refreshScheduleUI(false), 60000));
+
+    const suspendTimers = () => {
+      engine.suspend();
+      if (inputHandler._dualEngine) inputHandler._dualEngine.suspend();
+    };
+    const resumeTimers = () => {
+      engine.resumeFromSuspend();
+      if (inputHandler._dualEngine) inputHandler._dualEngine.resumeFromSuspend();
+    };
+    document.addEventListener('freeze', suspendTimers);
+    document.addEventListener('resume', resumeTimers);
+    window.addEventListener('pagehide', suspendTimers);
+    window.addEventListener('pageshow', resumeTimers);
+
+    // 14. Handle for tests/tooling to shut the instance down cleanly
+    window.__bjjApp = {
+      state,
+      engine,
+      inputHandler,
+      scheduleManager,
+      teardown() {
+        document.removeEventListener('freeze', suspendTimers);
+        document.removeEventListener('resume', resumeTimers);
+        window.removeEventListener('pagehide', suspendTimers);
+        window.removeEventListener('pageshow', resumeTimers);
+        engine.stop();
+        if (inputHandler._dualEngine) inputHandler._dualEngine.stop();
+        inputHandler.destroy();
+        intervals.forEach(clearInterval);
+        scheduleManager.stopPolling();
+        if (weatherManager) weatherManager.stop();
+        holidayTheme.stop();
+        if (displaySync) displaySync.stop();
+        window.__bjjApp = null;
+      }
+    };
   });
 }

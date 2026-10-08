@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const {
   formatTime,
-  parseTimeInput,
+  isValidSeconds,
   isNumeric,
   generateRoundDurations,
   DEFAULT_CONFIG,
@@ -52,23 +52,21 @@ describe('formatTime', () => {
   });
 });
 
-// ─── parseTimeInput ───
+// ─── isValidSeconds ───
 
-describe('parseTimeInput', () => {
-  it('converts 0 minutes 0 seconds to 0', () => {
-    expect(parseTimeInput(0, 0)).toBe(0);
+describe('isValidSeconds', () => {
+  it('accepts non-negative integers', () => {
+    expect(isValidSeconds(0)).toBe(true);
+    expect(isValidSeconds(300)).toBe(true);
   });
 
-  it('converts 5 minutes 0 seconds to 300', () => {
-    expect(parseTimeInput(5, 0)).toBe(300);
-  });
-
-  it('converts 1 minute 30 seconds to 90', () => {
-    expect(parseTimeInput(1, 30)).toBe(90);
-  });
-
-  it('round-trips with formatTime', () => {
-    expect(formatTime(parseTimeInput(5, 30))).toBe('05:30');
+  it('rejects NaN, Infinity, negatives, fractions and non-numbers', () => {
+    expect(isValidSeconds(NaN)).toBe(false);
+    expect(isValidSeconds(Infinity)).toBe(false);
+    expect(isValidSeconds(-1)).toBe(false);
+    expect(isValidSeconds(1.5)).toBe(false);
+    expect(isValidSeconds('300')).toBe(false);
+    expect(isValidSeconds(null)).toBe(false);
   });
 });
 
@@ -281,6 +279,49 @@ describe('TimerEngine', () => {
   afterEach(() => {
     engine.stop();
     vi.useRealTimers();
+  });
+
+  it.each([
+    [PHASES.ROUND, 2, 'end_round', PHASES.REST],
+    [PHASES.REST, 2, 'end_rest', PHASES.ROUND],
+    [PHASES.ROUND, 1, 'end_round', PHASES.IDLE],
+  ])('retains the %s transition cue once after a 1.1 second stall (rounds=%s)', (phase, rounds, cue, nextPhase) => {
+    const cues = [];
+    state.config.roundDurationSec = 10;
+    engine.start();
+    Object.assign(state, { phase, remainingSec: 1 });
+    state.config.numRounds = rounds;
+    const tick = engine.tick.bind(engine);
+    engine.tick = () => {
+      const alert = tick();
+      if (alert.type.startsWith('end_')) engine.emitTransitionCue(() => cues.push(alert.type));
+      else if (alert.type === 'countdown' && !engine.silent) cues.push('countdown');
+      return alert;
+    };
+    engine._nextTickAt = performance.now() - 1100;
+    engine._drive();
+    expect(state.phase).toBe(nextPhase);
+    expect(cues.filter(type => type === cue)).toEqual([cue]);
+    expect(cues.filter(type => type === 'countdown')).toHaveLength(nextPhase === PHASES.REST ? 1 : 0);
+    if (nextPhase !== PHASES.IDLE) engine._drive();
+    expect(cues.filter(type => type === cue)).toEqual([cue]);
+  });
+
+  it('keeps only the latest transition cue across several phases while suppressing stale countdowns', () => {
+    const cues = [];
+    engine.start();
+    const tick = engine.tick.bind(engine);
+    engine.tick = () => {
+      const alert = tick();
+      if (alert.type.startsWith('end_')) engine.emitTransitionCue(() => cues.push(alert.type));
+      else if (alert.type === 'countdown' && !engine.silent) cues.push('countdown');
+      return alert;
+    };
+    engine._nextTickAt = performance.now() - 20000;
+    engine._drive();
+    expect(state.phase).toBe(PHASES.IDLE);
+    expect(cues).toEqual(['end_round']);
+    expect(tickCb).toHaveBeenCalledTimes(13);
   });
 
   describe('start()', () => {
@@ -944,5 +985,79 @@ describe('ScheduleManager schedule display updates', () => {
     const next = manager.getNextClass(atStart);
     expect(active.title).toBe('Morning');
     expect(next.title).not.toBe('Morning');
+  });
+});
+
+// Review regressions: all config sources share the timer's integer bounds.
+describe('bounded timer config sources', () => {
+  it.each([-1, 0.5, 6000, Infinity, NaN, '60'])('rejects %s in defaults and both preset loaders', value => {
+    const defaults = { ...DEFAULT_CONFIG };
+    const competitions = APP_SETTINGS.competitionPresets;
+    const threshold = APP_SETTINGS.alertThresholdSec;
+    try {
+      applyConfigSettings({
+        defaults: { roundDurationSec: value, restDurationSec: value, prepDurationSec: value, numRounds: value, alertThresholdSec: value },
+        competitionPresets: { Invalid: { roundDurationSec: value, restDurationSec: value, numRounds: value } }
+      });
+      expect(DEFAULT_CONFIG).toEqual(defaults);
+      expect(APP_SETTINGS.alertThresholdSec).toBe(threshold);
+      expect(APP_SETTINGS.competitionPresets.Invalid).toEqual({ roundDurationSec: 300, restDurationSec: 60, numRounds: 0 });
+      const presets = new ClassPresetManager();
+      const original = presets.getPreset('kids');
+      presets.applyOverrides({ kids: { roundDurationSec: value, restDurationSec: value, numRounds: value } });
+      expect(presets.getPreset('kids')).toEqual(original);
+    } finally {
+      Object.assign(DEFAULT_CONFIG, defaults);
+      APP_SETTINGS.competitionPresets = competitions;
+      APP_SETTINGS.alertThresholdSec = threshold;
+    }
+  });
+
+  it('accepts bounded integer endpoints, including zero', () => {
+    const presets = new ClassPresetManager();
+    presets.applyOverrides({ kids: { roundDurationSec: 5999, restDurationSec: 0, numRounds: 0 } });
+    expect(presets.getPreset('kids')).toEqual({ roundDurationSec: 5999, restDurationSec: 0, numRounds: 0 });
+  });
+});
+
+describe('offline cache validation', () => {
+  it('filters malformed cached entries before polling after a failed fetch', async () => {
+    const entry = { dayOfWeek: 'Monday', startTime: '12:00', endTime: '13:00', title: 'Valid', classType: 'kids' };
+    localStorage.setItem(SCHEDULE_STORAGE_KEY, JSON.stringify({ schedule: [null, {}, 'bad', entry] }));
+    const oldFetch = global.fetch;
+    global.fetch = vi.fn().mockRejectedValue(new Error('offline'));
+    const manager = new ScheduleManager(new ClassPresetManager());
+    try {
+      await manager.loadConfig();
+      expect(manager._schedule).toEqual([entry]);
+      expect(() => manager._checkActiveClass()).not.toThrow();
+      expect(manager.getActiveClass(new Date(2026, 9, 5, 12, 30))).toEqual(entry);
+    } finally { global.fetch = oldFetch; localStorage.clear(); }
+  });
+});
+
+describe('storage failures and DST in an isolated runtime', () => {
+  it('evaluates the script even when every startup storage read throws', () => {
+    const { readFileSync } = require('node:fs');
+    const { runInNewContext } = require('node:vm');
+    const context = { module: { exports: {} }, localStorage: { getItem() { throw new Error('denied'); } } };
+    runInNewContext(readFileSync(require.resolve('./app.js'), 'utf8'), context);
+    expect(context.module.exports.APP_SETTINGS.scheduleEnabled).toBe(true);
+    expect(context.module.exports.APP_SETTINGS.holidayThemeEnabled).toBe(false);
+  });
+
+  it('counts actual elapsed seconds across both fall-back and spring-forward', () => {
+    const { execFileSync } = require('node:child_process');
+    const result = execFileSync(process.execPath, ['-e', `
+      const { ScheduleManager, ClassPresetManager } = require('./app.js');
+      const manager = new ScheduleManager(new ClassPresetManager());
+      manager._schedule = [{dayOfWeek:'Sunday',startTime:'00:30',endTime:'02:30',title:'DST',classType:'kids'}];
+      const beforeFallback = manager.getRemainingClassSec(new Date('2026-11-01T01:30:00-04:00'));
+      const afterFallback = manager.getRemainingClassSec(new Date('2026-11-01T01:30:00-05:00'));
+      manager._schedule[0].startTime = '01:30'; manager._schedule[0].endTime = '03:30';
+      const spring = manager.getRemainingClassSec(new Date('2026-03-08T01:30:00-05:00'));
+      console.log(JSON.stringify([beforeFallback, afterFallback, spring]));
+    `], { cwd: process.cwd(), env: { ...process.env, TZ: 'America/New_York' }, encoding: 'utf8' });
+    expect(JSON.parse(result)).toEqual([7200, 3600, 3600]);
   });
 });

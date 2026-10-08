@@ -2,9 +2,10 @@
   "name": "abjj-clock",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "app.js",
   "scripts": {
-    "serve": "node update-server.js & npx serve .",
+    "serve": "trap 'kill 0' EXIT INT TERM; node update-server.js & npx serve .",
+    "serve-dual": "if lsof -i :3000 -i :3001 >/dev/null 2>&1; then echo 'Ports 3000/3001 are already in use \u2014 stop whatever is using them first (lsof -i :3000 -i :3001)'; exit 1; fi; trap 'kill 0' EXIT INT TERM; node update-server.js & npx serve . & sleep 2; open -na 'Google Chrome' --args --new-window 'http://localhost:3000/'; open -na 'Google Chrome' --args --new-window 'http://localhost:3000/?dual=1'; open -na 'Google Chrome' --args --new-window 'http://localhost:3000/?screen=2'; wait",
     "update-server": "node update-server.js",
     "test": "vitest --run"
   },
@@ -14,7 +15,6 @@
   "type": "commonjs",
   "devDependencies": {
     "fast-check": "^4.5.3",
-    "happy-dom": "^20.7.0",
     "jsdom": "^27.0.1",
     "vitest": "^4.0.18"
   }
