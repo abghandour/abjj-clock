@@ -661,7 +661,7 @@
 
     #overlay .advanced-menu .menu-grid {
       display: grid;
-      grid-template-columns: auto auto 1fr auto;
+      grid-template-columns: auto 1fr auto;
       gap: 0.4vh 0;
       align-items: center;
       font-size: clamp(1rem, 2.5vw, 2.5rem);
@@ -669,17 +669,10 @@
 
     #overlay .advanced-menu .menu-grid-5 {
       display: grid;
-      grid-template-columns: auto auto 1fr auto auto;
+      grid-template-columns: auto 1fr auto auto;
       gap: 0.4vh 0;
       align-items: center;
       font-size: clamp(1rem, 2.5vw, 2.5rem);
-    }
-
-    #overlay .advanced-menu .menu-grid .mg-key,
-    #overlay .advanced-menu .menu-grid-5 .mg-key {
-      color: var(--accent-green);
-      font-weight: 700;
-      text-align: right;
     }
 
     #overlay .advanced-menu .menu-grid .mg-icon,
@@ -712,21 +705,20 @@
       align-items: center;
     }
 
-    #overlay .advanced-menu .menu-grid > .mg-key,
-    #overlay .advanced-menu .menu-grid-5 > .mg-key {
-      justify-content: flex-end;
-    }
-
     #overlay .advanced-menu .mg-sel {
       background: rgba(255, 255, 255, 0.14);
     }
 
-    #overlay .advanced-menu .mg-key.mg-sel {
+    #overlay .advanced-menu .mg-first.mg-sel {
       border-radius: 0.3em 0 0 0.3em;
     }
 
     #overlay .advanced-menu .mg-last.mg-sel {
       border-radius: 0 0.3em 0.3em 0;
+    }
+
+    #overlay .advanced-menu .mg-first.mg-last.mg-sel {
+      border-radius: 0.3em;
     }
 
     #overlay .advanced-menu .mg-name.mg-sel {

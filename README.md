@@ -34,8 +34,11 @@ keystroke, so a keyboard works the same way and no driver is needed on the Pi.
 While idle the main menu lists Training, Competition, Schedule, Screens (dual
 mode only), Blank screen, Holiday theme and Weekly schedule (OK toggles ON/OFF
 in place), Update app (asks for confirmation, highlight starts on No) and About.
-While a timer runs it is just Pause/Resume, Reset timer, Blank screen and Reset
-all; each closes the menu. Training value prompts step with the ring
+While a timer runs it is just Pause/Resume, Reset timer and Blank screen; each
+closes the menu. Whenever the app is not in its default state (a timer running
+or paused, the ready state, a preset or custom settings selected, dual timer
+on) a **Reset** row is added as the first option: it stops everything, clears
+the selection and returns to the defaults (or the active class preset). Training value prompts step with the ring
 and confirm with OK; typing digits still works from a keyboard.
 
 Program Flirc with these keys (Flirc GUI → full keyboard; holds via the CLI):

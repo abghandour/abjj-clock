@@ -639,13 +639,17 @@ describe('OverlayManager', () => {
     overlay.remainingClassSecProvider = () => 20 * 60;
     overlay.showTrainingMenu(baseConfig(), cb);
     overlay.handleKey('0'); // Chainsaw
-    '5'.split('').forEach(k => overlay.handleKey(k));
+    const dur = () => overlayEl.querySelector('.ts-minutes').textContent + ':' + overlayEl.querySelector('.ts-seconds').textContent;
+    expect(dur()).toBe('05:00'); // odd round picker starts at the 5:00 default
     overlay.handleKey('Enter'); // odd round 5:00
-    '30'.split('').forEach(k => overlay.handleKey(k));
+    expect(dur()).toBe('00:30'); // odd rest default
     overlay.handleKey('Enter'); // odd rest 30s
-    '2'.split('').forEach(k => overlay.handleKey(k));
+    expect(dur()).toBe('05:00'); // even round starts from the odd round
+    overlay.handleKey('ArrowDown'); overlay.handleKey('ArrowDown'); overlay.handleKey('ArrowDown');
+    expect(dur()).toBe('02:00');
     overlay.handleKey('Enter'); // even round 2:00
-    overlay.handleKey('Enter'); // even rest defaults to odd rest
+    expect(dur()).toBe('00:30'); // even rest starts from the odd rest
+    overlay.handleKey('Enter'); // accept it
     // 20 minutes fits 300+30+120+30+300+30+120 = 930s → four rounds
     expect(overlayEl.querySelector('.overlay-input').textContent).toBe('4'); // default shown in the box
     overlay.handleKey('Enter'); // accept default
@@ -1340,6 +1344,14 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     overlay = new OverlayManager();
     engine = new TimerEngine(state, () => {}, () => {});
     input = new InputHandler(engine, overlay, renderer, audio, state);
+    // Mirror boot: the fixture config is the "default" a reset lands on, so the
+    // idle menu starts without a Reset row.
+    input._defaultConfigCallback = () => ({ ...FIXTURE_DEFAULTS, presetName: null });
+    input._resetCallback = () => {
+      Object.assign(state.config, FIXTURE_DEFAULTS);
+      state.remainingSec = FIXTURE_DEFAULTS.roundDurationSec;
+      state._presetName = null;
+    };
     document.body.classList.add('timer-idle');
   });
 
@@ -1349,6 +1361,7 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     vi.useRealTimers();
   });
 
+  const FIXTURE_DEFAULTS = { roundDurationSec: 5, restDurationSec: 2, numRounds: 0 };
   const overlayEl = () => document.getElementById('overlay');
   const selectedName = () => overlayEl().querySelector('.mg-name.mg-sel').textContent;
 
@@ -1403,6 +1416,8 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     expect(document.getElementById('preset-label').textContent).toContain(names[1]);
 
     press('Escape');
+    expect(selectedName()).toBe('Reset'); // a preset is selected → Reset row leads
+    press('ArrowDown');
     press('Enter'); // Training
     expect(overlay._mode).toBe('training');
     press('Escape'); // back to main
@@ -1423,7 +1438,7 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     expect(state.phase).toBe(PHASES.IDLE); // running → stop
     expect(overlay.isOpen()).toBe(false); // the hold must not also open the menu
     press('Delete');
-    expect(state.config.roundDurationSec).toBe(DEFAULT_CONFIG.roundDurationSec);
+    expect(state.config.roundDurationSec).toBe(FIXTURE_DEFAULTS.roundDurationSec);
     expect(document.body.classList.contains('timer-idle')).toBe(true);
   });
 
@@ -1461,8 +1476,11 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     expect(overlayEl().querySelector('.overlay-input').textContent).toBe('3');
     press('Enter');
     expect(overlay._mode).toBe('training-rest');
-    press('PageUp'); // 30 → 45
-    expect(overlayEl().querySelector('.overlay-input').textContent).toBe('45');
+    const dur = () => overlayEl().querySelector('.ts-minutes').textContent + ':' + overlayEl().querySelector('.ts-seconds').textContent;
+    expect(dur()).toBe('00:30'); // rest picker starts at the 30 s default, minutes field first
+    press('ArrowRight'); // → seconds field
+    press('PageUp'); // held ring: +15 s → 45
+    expect(dur()).toBe('00:45');
     press('Escape'); // back to the training list, not closed, selection kept
     expect(overlay._mode).toBe('training');
     expect(selectedName()).toBe('Ladder Up');
@@ -1477,19 +1495,28 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     expect(state.config.restDurationSec).toBe(30);
   });
 
-  it('chainsaw round steps keep the quick-entry buffer in sync with the ring', () => {
+  it('chainsaw round steps edit the min:sec picker with the ring', () => {
     press('Escape');
     press('Enter'); // Training
     press('Enter'); // Chainsaw (first row)
     expect(overlay._mode).toBe('chainsaw-odd-round');
-    press('ArrowUp'); // 5:00 default + 15 s
-    expect(overlayEl().querySelector('.overlay-input').textContent).toBe('515');
-    press('ArrowDown'); press('ArrowDown');
-    expect(overlayEl().querySelector('.overlay-input').textContent).toBe('445');
-    press('PageDown'); press('PageDown'); press('PageDown'); press('PageDown'); // 4:45 − 4:00
-    expect(overlayEl().querySelector('.overlay-input').textContent).toBe('045'); // < 60 s uses the 0XX form
-    press('PageDown');
-    expect(overlayEl().querySelector('.overlay-input').textContent).toBe('00'); // floors at zero
+    const dur = () => overlayEl().querySelector('.ts-minutes').textContent + ':' + overlayEl().querySelector('.ts-seconds').textContent;
+    expect(dur()).toBe('05:00');
+    press('ArrowUp'); // minutes field: +1
+    expect(dur()).toBe('06:00');
+    press('ArrowRight'); // → seconds field
+    press('ArrowUp'); press('ArrowUp'); press('ArrowUp'); // +5 s each
+    expect(dur()).toBe('06:15');
+    press('PageDown'); // held ring: −15 s
+    expect(dur()).toBe('06:00');
+    press('ArrowDown'); // seconds wrap 00 → 55 (minutes untouched)
+    expect(dur()).toBe('06:55');
+    press('ArrowLeft'); // back to minutes
+    press('PageDown'); press('PageDown'); // −5 min each, floors at zero
+    expect(dur()).toBe('00:55');
+    press('Enter'); // odd round accepted → odd rest step
+    expect(overlay._mode).toBe('chainsaw-odd-rest');
+    expect(overlay._chainsawOddRoundSec).toBe(55);
   });
 
   it('Weekly schedule and Holiday theme menu items toggle in place', () => {
@@ -1576,24 +1603,24 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     expect(input._ready).toBe(false); // the wake-up press does nothing else
   });
 
-  it('menu while running is Pause / Reset timer / Blank screen / Reset all, each closing it', () => {
+  it('menu while running is Reset / Pause / Reset timer / Blank screen, each closing it', () => {
     press('Enter'); press('Enter');
     expect(state.phase).toBe(PHASES.ROUND);
     press('Escape');
     const names = () => Array.from(overlayEl().querySelectorAll('.mg-name')).map(el => el.textContent);
-    expect(names()).toEqual(['Pause', 'Reset timer', 'Blank screen', 'Reset all']);
-    press('Enter'); // Pause
+    expect(names()).toEqual(['Reset', 'Pause', 'Reset timer', 'Blank screen']);
+    press('ArrowDown'); press('Enter'); // Pause
     expect(overlay.isOpen()).toBe(false);
     expect(state.paused).toBe(true);
     press('Escape');
-    expect(names()[0]).toBe('Resume');
-    press('Enter'); // Resume
+    expect(names()[1]).toBe('Resume');
+    press('ArrowDown'); press('Enter'); // Resume
     expect(state.paused).toBe(false);
     expect(state.phase).toBe(PHASES.ROUND);
 
     state.config.roundDurationSec = 123;
     press('Escape');
-    press('ArrowDown'); press('Enter'); // Reset timer → stopped, ready, same settings
+    press('ArrowDown'); press('ArrowDown'); press('Enter'); // Reset timer → stopped, ready, same settings
     expect(overlay.isOpen()).toBe(false);
     expect(state.phase).toBe(PHASES.IDLE);
     expect(input._ready).toBe(true);
@@ -1602,10 +1629,37 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     press('Enter'); // start again
     expect(state.phase).toBe(PHASES.ROUND);
     press('Escape');
-    press('ArrowDown'); press('ArrowDown'); press('ArrowDown'); press('Enter'); // Reset all
+    press('Enter'); // Reset (first row)
     expect(overlay.isOpen()).toBe(false);
     expect(state.phase).toBe(PHASES.IDLE);
     expect(input._ready).toBe(false);
-    expect(state.config.roundDurationSec).toBe(DEFAULT_CONFIG.roundDurationSec);
+    expect(state.config.roundDurationSec).toBe(FIXTURE_DEFAULTS.roundDurationSec);
+  });
+
+  it('idle menu shows Reset first only when the app is not in its default state', () => {
+    const names = () => Array.from(overlayEl().querySelectorAll('.mg-name')).map(el => el.textContent);
+    press('Escape');
+    expect(names()[0]).toBe('Training'); // default state: no Reset row
+    press('Escape');
+    expect(overlay.isOpen()).toBe(false);
+
+    press('Enter'); // ready state counts as non-default
+    expect(input._ready).toBe(true);
+    press('Escape');
+    expect(names()[0]).toBe('Reset');
+    press('Enter'); // Reset → back to default
+    expect(overlay.isOpen()).toBe(false);
+    expect(input._ready).toBe(false);
+    press('Escape');
+    expect(names()[0]).toBe('Training');
+    press('Escape');
+
+    state.config.roundDurationSec = 123; // changed settings count as non-default
+    press('Escape');
+    expect(names()[0]).toBe('Reset');
+    press('Enter');
+    expect(state.config.roundDurationSec).toBe(FIXTURE_DEFAULTS.roundDurationSec);
+    press('Escape');
+    expect(names()[0]).toBe('Training');
   });
 });

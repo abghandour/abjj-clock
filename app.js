@@ -1903,8 +1903,7 @@ class OverlayManager {
       const sel = i === this._selIndex ? ' mg-sel' : '';
       const icon = it.icon && ICONS[it.icon] ? ICONS[it.icon](_s, '#aaa') : '';
       const note = typeof it.note === 'function' ? it.note() : it.note;
-      rows += `<span class="mg-key${sel}">${i + 1}</span>` +
-              `<span class="mg-icon${sel}">${icon}</span>` +
+      rows += `<span class="mg-icon mg-first${sel}">${icon}</span>` +
               `<span class="mg-name${sel}">${escapeHtml(it.name)}</span>` +
               `<span class="mg-note mg-last${sel}">${note ? escapeHtml(note) : ''}</span>`;
     });
@@ -2383,15 +2382,14 @@ class OverlayManager {
     const presetNames = Object.keys(APP_SETTINGS.competitionPresets);
     let rows = '';
     // Header row
-    rows += `<span></span><span></span><span></span>` +
+    rows += `<span></span><span></span>` +
             `<span class="mg-note" style="color:var(--text-round);font-weight:700;">Round</span>` +
             `<span class="mg-note" style="color:var(--text-rest);font-weight:700;">Rest</span>`;
     presetNames.forEach((name, i) => {
       const p = APP_SETTINGS.competitionPresets[name];
       const icon = presetIcon(name, _s) || ICONS.belt(_s, '#aaa');
       const sel = i === this._selIndex ? ' mg-sel' : '';
-      rows += `<span class="mg-key${sel}">${i}</span>` +
-              `<span class="mg-icon${sel}">${icon}</span>` +
+      rows += `<span class="mg-icon mg-first${sel}">${icon}</span>` +
               `<span class="mg-name${sel}">${escapeHtml(name)}</span>` +
               `<span class="mg-note${sel}" style="color:var(--text-round);">${formatTime(p.roundDurationSec)}</span>` +
               `<span class="mg-note mg-last${sel}" style="color:var(--text-rest);">${formatTime(p.restDurationSec)}</span>`;
@@ -2412,8 +2410,7 @@ class OverlayManager {
     let rows = '';
     TRAINING_MENU_ITEMS.forEach((it, i) => {
       const sel = i === this._selIndex ? ' mg-sel' : '';
-      rows += `<span class="mg-key${sel}">${it.key}</span>` +
-              `<span class="mg-icon${sel}">${ICONS[it.icon](_s)}</span>` +
+      rows += `<span class="mg-icon mg-first${sel}">${ICONS[it.icon](_s)}</span>` +
               `<span class="mg-name${sel}">${it.name}</span>` +
               `<span class="mg-note mg-last${sel}">${it.note}</span>`;
     });
@@ -2450,9 +2447,9 @@ class OverlayManager {
     this.overlayEl.innerHTML =
       `<div class="advanced-menu overlay-content" style="text-align:center;">` +
         `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:3vh;">System Update</div>` +
-        `<div class="menu-grid" style="grid-template-columns:auto 1fr;margin-bottom:3vh;">` +
-          `<span class="mg-key${sel(0)}">1</span><span class="mg-name mg-last${sel(0)}">Download latest code from Git</span>` +
-          `<span class="mg-key${sel(1)}">2</span><span class="mg-name mg-last${sel(1)}">Sync class schedule</span>` +
+        `<div class="menu-grid" style="grid-template-columns:1fr;margin-bottom:3vh;">` +
+          `<span class="mg-name mg-first mg-last${sel(0)}">Download latest code from Git</span>` +
+          `<span class="mg-name mg-first mg-last${sel(1)}">Sync class schedule</span>` +
         `</div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
@@ -2470,9 +2467,9 @@ class OverlayManager {
       `<div class="advanced-menu overlay-content" style="text-align:center;">` +
         `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:1vh;">Update app?</div>` +
         `<div style="font-size:clamp(0.9rem,1.8vw,1.8rem);color:var(--text-muted);margin-bottom:3vh;">Downloads the latest code from Git and reloads the timer</div>` +
-        `<div class="menu-grid" style="grid-template-columns:auto 1fr;margin-bottom:3vh;">` +
-          `<span class="mg-key${sel(0)}">1</span><span class="mg-name mg-last${sel(0)}">No</span>` +
-          `<span class="mg-key${sel(1)}">2</span><span class="mg-name mg-last${sel(1)}">Yes, update now</span>` +
+        `<div class="menu-grid" style="grid-template-columns:1fr;margin-bottom:3vh;">` +
+          `<span class="mg-name mg-first mg-last${sel(0)}">No</span>` +
+          `<span class="mg-name mg-first mg-last${sel(1)}">Yes, update now</span>` +
         `</div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
@@ -2622,6 +2619,7 @@ class InputHandler {
     this._onKeyDown = this._onKeyDown.bind(this);
     this._onKeyUp = this._onKeyUp.bind(this);
     this._resetCallback = null; // Set externally for key 9 reset
+    this._defaultConfigCallback = null; // Set externally: returns the config a reset lands on
     this._pausedAt = 0; // Timestamp when paused via key 0
     this._enterDownTime = 0; // Timestamp when Enter was pressed
     this._enterLongPressTimer = null; // Timer for long-press detection
@@ -3355,8 +3353,9 @@ class InputHandler {
 
   /**
    * Menu tap: open the main menu. While idle it lists presets, schedule and
-   * settings; while a timer runs it is just Pause/Resume, Reset timer, Blank
-   * screen and Reset all.
+   * settings; while a timer runs it is just Reset, Pause/Resume, Reset timer
+   * and Blank screen. "Reset" is always the first row and only appears when
+   * the app is not already in its default state.
    */
   _openMainMenu() {
     if (this.overlayManager.isOpen()) return;
@@ -3367,6 +3366,7 @@ class InputHandler {
     if (!idle) {
       // While a timer runs the menu is a short action list; every item closes it.
       const paused = this.state.paused || (dualActive && this._dualState.paused);
+      items.push(this._resetMenuItem());
       items.push({ id: 'pause', icon: paused ? 'play' : 'pause', name: paused ? 'Resume' : 'Pause', action: () => {
         this._handleEnterShortPress();
       } });
@@ -3377,14 +3377,11 @@ class InputHandler {
         this.renderer.toggleStealth();
         this.renderer.applyStealth(this.state.phase);
       } });
-      items.push({ id: 'reset-all', icon: 'power', name: 'Reset all', action: () => {
-        this._handleZeroPress();        // stop the running timer
-        this._handleEnterLongPress();   // then the idle full reset to app defaults
-      } });
       this.overlayManager.showMainMenu(items);
       this.renderer.updateStatusBar('menu');
       return;
     }
+    if (!this._isDefaultState()) items.push(this._resetMenuItem());
     items.push({ id: 'training', icon: 'ladderUp', name: 'Training', submenu: true, action: () => {
       this.overlayManager.showTrainingMenu({ ...this.state.config }, (cfg) => this._applyMenuConfig(cfg));
     } });
@@ -3438,6 +3435,36 @@ class InputHandler {
       this.renderer.updateRoundDisplay(roundSec, false);
       this.renderer.updateRestDisplay(s.remainingSec, true);
     }
+  }
+
+  /**
+   * Main-menu "Reset" row: stop any running timer, drop the selection and go
+   * back to the default state (app defaults or the active class preset).
+   */
+  _resetMenuItem() {
+    return { id: 'reset', icon: 'power', name: 'Reset', action: () => {
+      this._handleZeroPress();        // stop a running timer (no-op while idle & not ready)
+      if (this._ready) this._ready = false;
+      this._handleEnterLongPress();   // idle full reset to defaults
+    } };
+  }
+
+  /**
+   * True when nothing is running or selected: idle, not in the ready state,
+   * no dual timer, no custom round list and the config equals the default
+   * (DEFAULT_CONFIG, or the active class preset via _defaultConfigCallback).
+   */
+  _isDefaultState() {
+    const dualActive = this._dualMode && this._dualEngine && this._dualState &&
+      this._dualState.phase !== PHASES.IDLE;
+    if (this.state.phase !== PHASES.IDLE || dualActive || this._dualMode) return false;
+    if (this._ready || this.state.roundDurations || this.state.restDurations) return false;
+    const def = this._defaultConfigCallback ? this._defaultConfigCallback() : { ...DEFAULT_CONFIG, presetName: null };
+    const c = this.state.config;
+    return c.roundDurationSec === def.roundDurationSec &&
+      c.restDurationSec === def.restDurationSec &&
+      c.numRounds === def.numRounds &&
+      (this.state._presetName || null) === (def.presetName || null);
   }
 
   /**
@@ -5197,16 +5224,21 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         classProgress.setActiveClass(null);
       }
     };
-    inputHandler._resetCallback = () => {
+    const defaultConfig = () => {
       const now = new Date();
       const active = APP_SETTINGS.scheduleEnabled ? scheduleManager.getActiveClass(now) : null;
       const preset = active ? presetManager.getPreset(active.classType) : null;
       const src = preset || { ...DEFAULT_CONFIG };
+      return { ...src, presetName: active ? active.title : null };
+    };
+    inputHandler._defaultConfigCallback = defaultConfig;
+    inputHandler._resetCallback = () => {
+      const src = defaultConfig();
       state.config.roundDurationSec = src.roundDurationSec;
       state.config.restDurationSec = src.restDurationSec;
       state.config.numRounds = src.numRounds;
       state.remainingSec = src.roundDurationSec;
-      state._presetName = active ? active.title : null;
+      state._presetName = src.presetName;
       StorageManager.save(state.config);
     };
 
