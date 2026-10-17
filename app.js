@@ -117,6 +117,12 @@ function readStorage(key) {
 const APP_SETTINGS = {
   scheduleEnabled: readStorage('bjj-timer-schedule-enabled') !== 'false',
   holidayThemeEnabled: readStorage('bjj-timer-holiday-theme') === 'true',
+  // UI language: 'en' (default) or 'pt'. Preset names and class titles stay as
+  // stored; everything the app itself says goes through t().
+  language: readStorage('bjj-timer-language') === 'pt' ? 'pt' : 'en',
+  // Quiet visuals: edge flash instead of a full-screen white flash, steady
+  // outlines instead of blinking digits, no countdown dimming.
+  quietVisuals: readStorage('bjj-timer-quiet-visuals') === 'true',
   relay: { sharedKey: '1' },
   alertThresholdSec: 5,
   audio: {
@@ -207,6 +213,225 @@ function applyConfigSettings(data) {
     if (typeof w.units === 'string' && (w.units === 'fahrenheit' || w.units === 'celsius')) s.units = w.units;
     if (typeof w.pollIntervalMin === 'number') s.pollIntervalMin = w.pollIntervalMin;
   }
+}
+
+// --- Translations ---
+
+const LANGUAGES = ['en', 'pt'];
+const LANGUAGE_NAMES = { en: 'English', pt: 'Português' };
+
+/** Every string the app shows, by key. English is the fallback for any gap. */
+const STRINGS = {
+  en: {
+    'menu.title': 'Menu', 'menu.training': 'Training', 'menu.competition': 'Competition',
+    'menu.schedule': 'View schedule', 'menu.screens': 'Screens', 'menu.hide': 'Hide display',
+    'menu.hide.note': 'rest timer stays', 'menu.holiday': 'Holiday theme', 'menu.quiet': 'Quiet visuals',
+    'menu.followSchedule': 'Follow class schedule', 'menu.language': 'Language',
+    'menu.maintenance': 'Maintenance', 'menu.about': 'About', 'menu.on': 'ON', 'menu.off': 'OFF',
+    'menu.pause': 'Pause', 'menu.resume': 'Resume', 'menu.stopKeep': 'Stop and keep settings',
+    'menu.restore': 'Restore defaults',
+    'confirm.restore.title': 'Restore defaults?', 'confirm.restore.body': 'Stops the timer and clears the current settings.',
+    'confirm.restore.yes': 'Yes, restore defaults', 'confirm.no': 'No, go back',
+    'training.title': 'Training Presets', 'competition.title': 'Competition Presets',
+    'label.round': 'Round', 'label.rest': 'Rest', 'label.timer1': 'Timer 1', 'label.timer2': 'Timer 2',
+    'label.classTimeLeft': 'Class time left', 'label.custom': 'Custom', 'label.repeat': 'Repeat',
+    'label.rounds': '{n} rounds', 'label.round1': '1 round', 'label.roundN': 'Round {c}', 'label.roundOf': 'Round {c} / {t}',
+    'label.outside': 'Outside {t}',
+    'preset.Chainsaw': 'Chainsaw', 'preset.Ladder Up': 'Ladder Up', 'preset.Ladder Down': 'Ladder Down',
+    'preset.Pyramid': 'Pyramid', 'preset.Inv. Pyramid': 'Inv. Pyramid', 'preset.Tabata': 'Tabata', 'preset.Dual Timer': 'Dual Timer',
+    'preset.Kids (under 15)': 'Kids (under 15)', 'preset.White Belt': 'White Belt', 'preset.Blue Belt': 'Blue Belt',
+    'preset.Purple Belt': 'Purple Belt', 'preset.Brown Belt': 'Brown Belt', 'preset.Black Belt': 'Black Belt',
+    'note.Chainsaw': 'Alternating round/rest', 'note.Ladder Up': 'Short → long', 'note.Ladder Down': 'Long → short',
+    'note.Pyramid': 'Short → long → short', 'note.Inv. Pyramid': 'Long → short → long',
+    'note.Tabata': '20s on / 10s off × 8', 'note.Dual Timer': 'Two independent timers',
+    'wizard.step': 'Step {n} of {m}', 'wizard.back': 'Menu: back', 'wizard.prev': 'Menu: previous step',
+    'wizard.nav': '▲▼ change · OK next', 'wizard.suggested': 'suggested · OK accepts',
+    'wizard.minutes': 'minutes', 'wizard.seconds': 'seconds',
+    'wizard.totalMinutes': 'Total minutes:', 'wizard.howManyRounds': 'How many rounds?', 'wizard.restBetween': 'Rest between rounds:',
+    'wizard.enterNumber': 'Please enter a number', 'wizard.min1minute': 'Need at least 1 minute', 'wizard.min2rounds': 'Need at least 2 rounds',
+    'wizard.restTooLong': 'Rest too long, no time left for rounds',
+    'chainsaw.oddRound': 'Odd round duration:', 'chainsaw.oddRest': 'Odd round rest:', 'chainsaw.evenRound': 'Even round duration:',
+    'chainsaw.evenRest': 'Even round rest:', 'chainsaw.rounds': 'How many rounds:', 'chainsaw.needDuration': 'Round needs a duration',
+    'chainsaw.enterNumber': 'Enter a number', 'chainsaw.min1round': 'Need at least 1 round',
+    'state.ready': 'Ready', 'state.paused': '❚❚ Paused', 'state.finished': 'Finished', 'state.editing': 'Editing', 'state.editingField': 'Editing {field}',
+    'hint.ready': '▶ start · ring edits', 'hint.paused': '▶ resume · Menu options', 'hint.finished': '▶ start again · Menu options',
+    'hint.editRunning': '◀▶ field · ▲▼ edit & restart · Menu cancel', 'hint.edit': '◀▶ field · ▲▼ adjust · ▶ start · Menu cancel',
+    'field.round-min': 'round minutes', 'field.round-sec': 'round seconds', 'field.rest-min': 'rest minutes',
+    'field.rest-sec': 'rest seconds', 'field.rounds': 'rounds', 'field.timer2': 'timer 2 {field}',
+    'list.now': 'Now R{n} · {t}', 'list.next': 'Next R{n} · {t}', 'list.last': 'Last round', 'list.overtime': '{n}m overtime',
+    'sched.next': 'Next: {title}', 'sched.remainingHM': '{h}h {m}m remaining', 'sched.remainingM': '{m}m remaining',
+    'sched.dayAt': '{day} at {time}', 'sched.none': 'No classes scheduled', 'sched.in': 'in {x}',
+    'sched.title': 'Weekly Schedule', 'sched.empty': 'none', 'sched.noClasses': 'No classes', 'sched.today': 'today',
+    'day.Monday': 'Monday', 'day.Tuesday': 'Tuesday', 'day.Wednesday': 'Wednesday', 'day.Thursday': 'Thursday',
+    'day.Friday': 'Friday', 'day.Saturday': 'Saturday', 'day.Sunday': 'Sunday',
+    'dayAbbr.Monday': 'Mon', 'dayAbbr.Tuesday': 'Tue', 'dayAbbr.Wednesday': 'Wed', 'dayAbbr.Thursday': 'Thu',
+    'dayAbbr.Friday': 'Fri', 'dayAbbr.Saturday': 'Sat', 'dayAbbr.Sunday': 'Sun',
+    'credits.title': 'Credits', 'credits.good': 'The good parts', 'credits.hard': 'The hard parts', 'credits.ugly': 'The ugly parts',
+    'maint.title': 'Maintenance', 'maint.install': 'Install update and restart', 'maint.sync': 'Sync class schedule',
+    'maint.confirmTitle': 'Install update and restart?', 'maint.confirmBody': 'Downloads the newest version and restarts the timer. Takes about a minute.',
+    'maint.yes': 'Yes, install now', 'maint.updating': 'Updating…', 'maint.downloading': 'Downloading the newest version',
+    'maint.fetching': 'Fetching the class schedule', 'maint.installed': 'Update installed', 'maint.synced': 'Schedule updated',
+    'maint.restarting': 'Restarting the timer…', 'maint.failed': 'Update failed', 'maint.menuReturn': 'Menu to return',
+    'maint.noWifi': 'No WiFi. Check the network connection', 'maint.timeout': 'Timed out after 60s',
+    'maint.connFailed': 'Connection failed', 'maint.unknown': 'Unknown error',
+    'screens.toast': 'Screens: {mode}', 'screens.mirror': 'Mirror', 'screens.clocktimer': 'Clock + Timer', 'screens.split': 'Split Timers',
+    'sync.disconnected': 'Primary display disconnected. Timer may be out of date',
+    'stealth.hint': 'Press any key to display timers'
+  },
+  pt: {
+    'menu.title': 'Menu', 'menu.training': 'Treino', 'menu.competition': 'Competição',
+    'menu.schedule': 'Ver horário', 'menu.screens': 'Telas', 'menu.hide': 'Ocultar tela',
+    'menu.hide.note': 'descanso continua visível', 'menu.holiday': 'Tema festivo', 'menu.quiet': 'Visual discreto',
+    'menu.followSchedule': 'Seguir horário das aulas', 'menu.language': 'Idioma',
+    'menu.maintenance': 'Manutenção', 'menu.about': 'Sobre', 'menu.on': 'LIGADO', 'menu.off': 'DESLIGADO',
+    'menu.pause': 'Pausar', 'menu.resume': 'Retomar', 'menu.stopKeep': 'Parar e manter ajustes',
+    'menu.restore': 'Restaurar padrões',
+    'confirm.restore.title': 'Restaurar padrões?', 'confirm.restore.body': 'Para o cronômetro e apaga os ajustes atuais.',
+    'confirm.restore.yes': 'Sim, restaurar padrões', 'confirm.no': 'Não, voltar',
+    'training.title': 'Predefinições de treino', 'competition.title': 'Predefinições de competição',
+    'label.round': 'Rodada', 'label.rest': 'Descanso', 'label.timer1': 'Cronômetro 1', 'label.timer2': 'Cronômetro 2',
+    'label.classTimeLeft': 'Tempo de aula restante', 'label.custom': 'Personalizado', 'label.repeat': 'Repetir',
+    'label.rounds': '{n} rodadas', 'label.round1': '1 rodada', 'label.roundN': 'Rodada {c}', 'label.roundOf': 'Rodada {c} / {t}',
+    'label.outside': 'Lá fora {t}',
+    'preset.Chainsaw': 'Motosserra', 'preset.Ladder Up': 'Escada crescente', 'preset.Ladder Down': 'Escada decrescente',
+    'preset.Pyramid': 'Pirâmide', 'preset.Inv. Pyramid': 'Pirâmide invertida', 'preset.Tabata': 'Tabata', 'preset.Dual Timer': 'Cronômetro duplo',
+    'preset.Kids (under 15)': 'Infantil (até 15 anos)', 'preset.White Belt': 'Faixa Branca', 'preset.Blue Belt': 'Faixa Azul',
+    'preset.Purple Belt': 'Faixa Roxa', 'preset.Brown Belt': 'Faixa Marrom', 'preset.Black Belt': 'Faixa Preta',
+    'note.Chainsaw': 'Rodada e descanso alternados', 'note.Ladder Up': 'Curto → longo', 'note.Ladder Down': 'Longo → curto',
+    'note.Pyramid': 'Curto → longo → curto', 'note.Inv. Pyramid': 'Longo → curto → longo',
+    'note.Tabata': '20 s ativo / 10 s descanso × 8', 'note.Dual Timer': 'Dois cronômetros independentes',
+    'wizard.step': 'Passo {n} de {m}', 'wizard.back': 'Menu: voltar', 'wizard.prev': 'Menu: passo anterior',
+    'wizard.nav': '▲▼ alterar · OK avançar', 'wizard.suggested': 'sugerido · OK aceita',
+    'wizard.minutes': 'minutos', 'wizard.seconds': 'segundos',
+    'wizard.totalMinutes': 'Minutos no total:', 'wizard.howManyRounds': 'Quantas rodadas?', 'wizard.restBetween': 'Descanso entre rodadas:',
+    'wizard.enterNumber': 'Digite um número', 'wizard.min1minute': 'Mínimo de 1 minuto', 'wizard.min2rounds': 'Mínimo de 2 rodadas',
+    'wizard.restTooLong': 'Descanso longo demais, não sobra tempo para as rodadas',
+    'chainsaw.oddRound': 'Duração das rodadas ímpares:', 'chainsaw.oddRest': 'Descanso das rodadas ímpares:', 'chainsaw.evenRound': 'Duração das rodadas pares:',
+    'chainsaw.evenRest': 'Descanso das rodadas pares:', 'chainsaw.rounds': 'Quantas rodadas:', 'chainsaw.needDuration': 'A rodada precisa de duração',
+    'chainsaw.enterNumber': 'Digite um número', 'chainsaw.min1round': 'Mínimo de 1 rodada',
+    'state.ready': 'Pronto', 'state.paused': '❚❚ Pausado', 'state.finished': 'Concluído', 'state.editing': 'Editando', 'state.editingField': 'Editando {field}',
+    'hint.ready': '▶ iniciar · anel edita', 'hint.paused': '▶ retomar · Menu opções', 'hint.finished': '▶ reiniciar · Menu opções',
+    'hint.editRunning': '◀▶ campo · ▲▼ editar e reiniciar · Menu cancelar', 'hint.edit': '◀▶ campo · ▲▼ ajustar · ▶ iniciar · Menu cancelar',
+    'field.round-min': 'minutos da rodada', 'field.round-sec': 'segundos da rodada', 'field.rest-min': 'minutos do descanso',
+    'field.rest-sec': 'segundos do descanso', 'field.rounds': 'rodadas', 'field.timer2': 'cronômetro 2, {field}',
+    'list.now': 'Agora R{n} · {t}', 'list.next': 'Próximo R{n} · {t}', 'list.last': 'Última rodada', 'list.overtime': '{n} min além',
+    'sched.next': 'Próxima: {title}', 'sched.remainingHM': 'faltam {h}h {m}min', 'sched.remainingM': 'faltam {m} min',
+    'sched.dayAt': '{day} às {time}', 'sched.none': 'Nenhuma aula marcada', 'sched.in': 'em {x}',
+    'sched.title': 'Horário semanal', 'sched.empty': 'nenhuma', 'sched.noClasses': 'Sem aulas', 'sched.today': 'hoje',
+    'day.Monday': 'Segunda', 'day.Tuesday': 'Terça', 'day.Wednesday': 'Quarta', 'day.Thursday': 'Quinta',
+    'day.Friday': 'Sexta', 'day.Saturday': 'Sábado', 'day.Sunday': 'Domingo',
+    'dayAbbr.Monday': 'Seg', 'dayAbbr.Tuesday': 'Ter', 'dayAbbr.Wednesday': 'Qua', 'dayAbbr.Thursday': 'Qui',
+    'dayAbbr.Friday': 'Sex', 'dayAbbr.Saturday': 'Sáb', 'dayAbbr.Sunday': 'Dom',
+    'credits.title': 'Créditos', 'credits.good': 'As partes boas', 'credits.hard': 'As partes difíceis', 'credits.ugly': 'As partes feias',
+    'maint.title': 'Manutenção', 'maint.install': 'Instalar atualização e reiniciar', 'maint.sync': 'Sincronizar horário das aulas',
+    'maint.confirmTitle': 'Instalar atualização e reiniciar?', 'maint.confirmBody': 'Baixa a versão mais recente e reinicia o cronômetro. Leva cerca de um minuto.',
+    'maint.yes': 'Sim, instalar agora', 'maint.updating': 'Atualizando…', 'maint.downloading': 'Baixando a versão mais recente',
+    'maint.fetching': 'Buscando o horário das aulas', 'maint.installed': 'Atualização instalada', 'maint.synced': 'Horário atualizado',
+    'maint.restarting': 'Reiniciando o cronômetro…', 'maint.failed': 'Falha na atualização', 'maint.menuReturn': 'Menu para voltar',
+    'maint.noWifi': 'Sem WiFi. Verifique a conexão de rede', 'maint.timeout': 'Tempo esgotado após 60 s',
+    'maint.connFailed': 'Falha na conexão', 'maint.unknown': 'Erro desconhecido',
+    'screens.toast': 'Telas: {mode}', 'screens.mirror': 'Espelho', 'screens.clocktimer': 'Relógio + Cronômetro', 'screens.split': 'Cronômetros separados',
+    'sync.disconnected': 'Tela principal desconectada. O cronômetro pode estar desatualizado',
+    'stealth.hint': 'Pressione qualquer botão para mostrar os cronômetros'
+  }
+};
+
+/**
+ * Translate a string key for the current language, filling {placeholders}.
+ * Unknown keys fall back to English, then to the key itself.
+ * @param {string} key
+ * @param {Object} [vars]
+ * @returns {string}
+ */
+function t(key, vars) {
+  const table = STRINGS[APP_SETTINGS.language] || STRINGS.en;
+  let str = table[key] !== undefined ? table[key] : (STRINGS.en[key] !== undefined ? STRINGS.en[key] : key);
+  if (vars) for (const k of Object.keys(vars)) str = str.split(`{${k}}`).join(String(vars[k]));
+  return str;
+}
+
+/**
+ * Class titles arrive from the synced calendar in English. Known titles are
+ * translated for display by a normalised lookup (case, spacing and
+ * punctuation ignored); anything else shows as written.
+ */
+const CLASS_TITLES = {
+  pt: {
+    'adultnoonclass': 'Aula de adultos (meio-dia)',
+    'kidsjiujitsubasics': 'Jiu-Jitsu infantil básico',
+    'adultjiujitsubasics': 'Jiu-Jitsu adulto básico',
+    'drillonly': 'Só drills',
+    'marathonrolladults': 'Maratona de rola (adultos)',
+    'kidsadvanced': 'Infantil avançado',
+    'adultjiujitsualllevels': 'Jiu-Jitsu adulto, todos os níveis',
+    'adultadvanced': 'Adulto avançado',
+    'womensprivategroupclass': 'Aula particular em grupo (mulheres)',
+    'kidsbasics': 'Infantil básico',
+    'kidsnogi': 'Infantil no-gi',
+    'openmat': 'Tatame livre',
+    'openmatspecial': 'Tatame livre especial'
+  }
+};
+
+function normalizeClassTitle(title) {
+  return String(title || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+/** Display name for a class title from the schedule. */
+function classDisplayName(title) {
+  if (!title) return '';
+  const table = CLASS_TITLES[APP_SETTINGS.language];
+  if (!table) return title;
+  const hit = table[normalizeClassTitle(title)];
+  return hit !== undefined ? hit : title;
+}
+
+/**
+ * Display name for a stored preset name: a built-in preset when the app
+ * knows it, else a class title (the schedule applies presets under the
+ * class name), else the name as stored.
+ */
+function presetDisplayName(name) {
+  if (!name) return '';
+  const table = STRINGS[APP_SETTINGS.language] || STRINGS.en;
+  if (table[`preset.${name}`] !== undefined) return table[`preset.${name}`];
+  return classDisplayName(name);
+}
+
+/**
+ * Re-label the static markup (round / rest labels, panel names, banners) in
+ * the current language. Dynamic content re-renders through t() on its own.
+ * @param {Document} [doc]
+ */
+function applyStaticTranslations(doc) {
+  doc = doc || (typeof document !== 'undefined' ? document : null);
+  if (!doc) return;
+  const set = (sel, text) => doc.querySelectorAll(sel).forEach(el => { if (el.textContent !== text) el.textContent = text; });
+  set('#round-label, .round-label-2', t('label.round'));
+  set('#rest-label, .rest-label-2', t('label.rest'));
+  set('#timer-panel-1 .timer-panel-name', t('label.timer1'));
+  set('#timer-panel-2 .timer-panel-name', t('label.timer2'));
+  set('#class-progress-label', t('label.classTimeLeft'));
+  set('#sync-status', t('sync.disconnected'));
+  set('#stealth-hint', t('stealth.hint'));
+  doc.documentElement.lang = APP_SETTINGS.language === 'pt' ? 'pt-BR' : 'en';
+}
+
+/**
+ * Switch the UI language, persist it and re-label the static markup.
+ * @param {string} lang - 'en' | 'pt'
+ * @returns {string} the language now in effect
+ */
+function setLanguage(lang) {
+  const next = LANGUAGES.includes(lang) ? lang : 'en';
+  APP_SETTINGS.language = next;
+  try {
+    localStorage.setItem('bjj-timer-language', next);
+  } catch (e) {
+    // localStorage unavailable — setting applies for this session only
+  }
+  applyStaticTranslations();
+  return next;
 }
 
 const PHASES = {
@@ -780,6 +1005,33 @@ class AudioManager {
   }
 
   /**
+   * Play a short rising two-note cue for resume, so pause and resume are
+   * distinguishable by ear.
+   */
+  playResume() {
+    try {
+      if (!this._ensureContext()) return;
+      const ctx = this.audioCtx;
+      const now = ctx.currentTime;
+      const vol = APP_SETTINGS.audio.volume;
+      [[330, 0], [440, 0.09]].forEach(([freq, at]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(vol * 0.9, now + at);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + at + 0.12);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + at);
+        osc.stop(now + at + 0.12);
+      });
+    } catch (e) {
+      console.warn('Resume cue playback failed:', e);
+    }
+  }
+
+  /**
    * Play a short descending tone for stop/reset actions.
    */
   playCancel() {
@@ -840,6 +1092,16 @@ const ICONS = {
   blank: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/></svg>`,
   power: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></svg>`,
   download: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>`,
+  // Main-menu rows: one distinct, conventional glyph per action
+  undo: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/></svg>`,
+  stop: (s) => `<svg ${s} fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>`,
+  calendar: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`,
+  clock: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`,
+  eyeOff: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.9 17.9A10.9 10.9 0 0 1 12 20c-7 0-11-8-11-8a20 20 0 0 1 5.1-6"/><path d="M9.9 4.2A10 10 0 0 1 12 4c7 0 11 8 11 8a20 20 0 0 1-2.2 3.2"/><path d="M14.1 14.1a3 3 0 1 1-4.2-4.2"/><path d="M1 1l22 22"/></svg>`,
+  moon: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`,
+  globe: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+  wrench: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`,
+  info: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
   snow: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M3.3 7l17.4 10"/><path d="M3.3 17L20.7 7"/><path d="M9 4.5l3 2 3-2"/><path d="M9 19.5l3-2 3 2"/><path d="M4.5 9.5l3.5 1-1 3.5"/><path d="M19.5 14.5l-3.5-1 1-3.5"/><path d="M4.5 14.5l3.5-1-1-3.5"/><path d="M19.5 9.5l-3.5 1 1 3.5"/></svg>`
 };
 
@@ -1003,16 +1265,12 @@ class Renderer {
    */
   updateRoundDisplay(remainingSec, isActive) {
     if (!this.roundTimerEl) return;
-    const { minsEl, secsEl } = Renderer.setDigits(this.roundTimerEl, remainingSec);
+    Renderer.setDigits(this.roundTimerEl, remainingSec);
     this.roundTimerEl.classList.toggle('timer-active', isActive);
     if (!isActive) this.roundTimerEl.classList.remove('timer-paused');
-    const warn = isActive && remainingSec <= 10;
-    const color = warn ? 'var(--accent-yellow)' : '';
-    if (this.roundTimerEl.style.backgroundColor !== color) {
-      this.roundTimerEl.style.backgroundColor = color;
-      minsEl.style.borderColor = color;
-      secsEl.style.borderColor = color;
-    }
+    // Final ten seconds: yellow box with black digits (white on yellow is
+    // unreadable from across the mat)
+    this.roundTimerEl.classList.toggle('timer-warn', isActive && remainingSec <= 10);
   }
 
   /**
@@ -1025,6 +1283,10 @@ class Renderer {
     Renderer.setDigits(this.restTimerEl, remainingSec);
     this.restTimerEl.classList.toggle('timer-active', isActive);
     if (!isActive) this.restTimerEl.classList.remove('timer-paused');
+    this.restTimerEl.classList.toggle('timer-warn', isActive && remainingSec <= 10);
+    // While resting, the rest box takes the big slot and the round box the small one
+    const container = document.getElementById('dual-timer-container');
+    if (container) container.classList.toggle('rest-active', isActive);
   }
 
   /**
@@ -1069,7 +1331,8 @@ class Renderer {
    */
   updateTemperature(text) {
     if (this.temperatureEl) {
-      this.temperatureEl.textContent = text;
+      this._lastTemperature = text;
+      this.temperatureEl.textContent = text ? t('label.outside', { t: text }) : '';
       this.temperatureEl.style.display = text ? '' : 'none';
     }
   }
@@ -1188,13 +1451,30 @@ class Renderer {
   }
 
   /**
-   * The corner key-hint box was removed; this keeps the element empty so the
-   * callers and the display-sync section list stay unchanged.
-   * @param {'clock'|'ready'|'running'|'paused'|'editing'|'menu'|'training'|'competition'|'hidden'} mode
+   * State label under the timers. Names the states that otherwise look alike
+   * from across the mat (Ready / Paused / Finished) and, while editing, the
+   * one control line a coach needs. Running and idle show nothing.
+   * @param {'clock'|'ready'|'running'|'paused'|'finished'|'editing'|'menu'|'training'|'competition'|'hidden'} mode
+   * @param {{field?: string, running?: boolean}} [detail] - Editing: field name and whether a session is live
    */
-  updateStatusBar(mode) {
+  updateStatusBar(mode, detail) {
     if (!this.statusBarEl) return;
-    this.statusBarEl.innerHTML = '';
+    // Overlays cover the label; keep whatever state it showed before
+    if (mode === 'menu' || mode === 'training' || mode === 'competition') return;
+    let html = '';
+    const row = (cls, state, hint) =>
+      `<span class="sb-state ${cls}">${state}</span><span class="sb-hint">${hint}</span>`;
+    if (mode === 'ready') html = row('sb-ready', t('state.ready'), t('hint.ready'));
+    else if (mode === 'paused') html = row('sb-paused', t('state.paused'), t('hint.paused'));
+    else if (mode === 'finished') html = row('sb-finished', t('state.finished'), t('hint.finished'));
+    else if (mode === 'editing') {
+      const field = detail && detail.field ? t('state.editingField', { field: escapeHtml(detail.field) }) : t('state.editing');
+      const hint = detail && detail.running ? t('hint.editRunning') : t('hint.edit');
+      html = row('sb-editing', field, hint);
+    }
+    this._lastStatus = { mode, detail };
+    if (this.statusBarEl.innerHTML !== html) this.statusBarEl.innerHTML = html;
+    this.statusBarEl.classList.toggle('active', html !== '');
   }
 
   /**
@@ -1209,11 +1489,12 @@ class Renderer {
     let html;
     if (current === 0) {
       html = total === 0
-        ? `${ICONS.repeat('width="1em" height="1em" viewBox="0 0 24 24" style="vertical-align:-0.15em;margin-right:0.3em;"')}Repeat`
-        : `${total} round${total > 1 ? 's' : ''}`;
+        ? `${ICONS.repeat('width="1em" height="1em" viewBox="0 0 24 24" style="vertical-align:-0.15em;margin-right:0.3em;"')}${t('label.repeat')}`
+        : (total === 1 ? t('label.round1') : t('label.rounds', { n: total }));
     } else {
-      html = total === 0 ? `Round ${current}` : `Round ${current} / ${total}`;
+      html = total === 0 ? t('label.roundN', { c: current }) : t('label.roundOf', { c: current, t: total });
     }
+    this._lastCounter = { current, total };
     if (this.roundCounterEl.innerHTML !== html) this.roundCounterEl.innerHTML = html;
   }
 
@@ -1226,8 +1507,9 @@ class Renderer {
     if (!this.presetLabelEl) return;
     const _s = 'width="1.2em" height="1.2em" viewBox="0 0 24 24"';
     const html = name
-      ? `${presetIcon(name, _s)}${escapeHtml(name)}`
-      : `${ICONS.gear(_s)}Custom`;
+      ? `${presetIcon(name, _s)}${escapeHtml(presetDisplayName(name))}`
+      : `${ICONS.gear(_s)}${t('label.custom')}`;
+    this._lastPreset = name;
     if (this.presetLabelEl.innerHTML !== html) this.presetLabelEl.innerHTML = html;
   }
 
@@ -1251,7 +1533,7 @@ class Renderer {
       const icon = presetIcon(presetName, _s);
       const totalSec = durations.reduce((a, b) => a + b, 0);
       const totalMin = Math.round(totalSec / 60);
-      html += `<div style="color:var(--accent-green);font-weight:700;margin-bottom:0.5em;">${icon}${escapeHtml(presetName)} <span style="font-weight:400;color:var(--text-muted);font-size:0.8em;">${totalMin}m</span></div>`;
+      html += `<div style="color:var(--accent-green);font-weight:700;margin-bottom:0.5em;">${icon}${escapeHtml(presetDisplayName(presetName))} <span style="font-weight:400;color:var(--text-muted);font-size:0.8em;">${totalMin}m</span></div>`;
     }
 
     // Calculate time from NOW until each round ends to find overtime.
@@ -1285,13 +1567,22 @@ class Renderer {
       }
     }
 
+    // The current and next rounds in large type; the full list stays below
+    // for the overview.
+    if (currentRound > 0) {
+      const nextDur = durations[currentRound]; // 0-based: the round after the current one
+      html += `<div class="round-now">` +
+        `<span class="round-now-cur">${t('list.now', { n: currentRound, t: formatTime(durations[currentRound - 1]) })}</span>` +
+        (nextDur !== undefined ? `<span class="round-now-next">${t('list.next', { n: currentRound + 1, t: formatTime(nextDur) })}</span>` : `<span class="round-now-next">${t('list.last')}</span>`) +
+        `</div>`;
+    }
     durations.forEach((dur, i) => {
       const roundNum = i + 1;
       let cls = 'round-item';
       if (roundNum < currentRound) cls += ' past';
       else if (roundNum === currentRound) cls += ' current';
       const ot = overtimeMinutes[i] || 0;
-      const overtimeTag = ot > 0 ? ` <span class="overtime-badge">${ot}m overtime</span>` : '';
+      const overtimeTag = ot > 0 ? ` <span class="overtime-badge">${t('list.overtime', { n: ot })}</span>` : '';
       html += `<div class="${cls}"><span class="round-num">R${roundNum}</span> ${formatTime(dur)}${overtimeTag}</div>`;
     });
     // The list only changes on round transitions or when the class-remaining
@@ -1365,18 +1656,18 @@ class Renderer {
     if (hours >= 24) {
       const days = Math.floor(hours / 24);
       const remH = hours % 24;
-      countdownStr = `in ${days}d ${remH}h`;
+      countdownStr = `${days}d ${remH}h`;
     } else if (hours > 0) {
-      countdownStr = `in ${hours}h ${mins}m`;
+      countdownStr = `${hours}h ${mins}m`;
     } else {
-      countdownStr = `in ${mins}m`;
+      countdownStr = `${mins}m`;
     }
 
     // Show day only if the class is actually within the next 24h — a same-weekday
     // class that already passed today wrapped to next week and is NOT "today"
     const isToday = nextClass.dayOfWeek === todayName && minutesUntil < 24 * 60;
-    const dayLabel = isToday ? '' : `${nextClass.dayOfWeek} `;
-    const countdownPart = isToday ? ` <span class="next-countdown">(${countdownStr})</span>` : '';
+    const dayLabel = isToday ? '' : `${t('day.' + nextClass.dayOfWeek)} `;
+    const countdownPart = isToday ? ` <span class="next-countdown">(${t('sched.in', { x: countdownStr })})</span>` : '';
 
     const fmtTime = (t) => {
       const [h, m] = t.split(':').map(Number);
@@ -1387,7 +1678,7 @@ class Renderer {
     };
 
     this.nextClassDisplayEl.innerHTML =
-      `<span class="next-title">Next: ${escapeHtml(nextClass.title)}</span><br>` +
+      `<span class="next-title">${t('sched.next', { title: escapeHtml(classDisplayName(nextClass.title)) })}</span><br>` +
       `<span class="next-time">${dayLabel}${fmtTime(nextClass.startTime)}</span>` +
       countdownPart;
   }
@@ -1416,11 +1707,11 @@ class Renderer {
       const remainH = Math.floor(remainingMin / 60);
       const remainM = remainingMin % 60;
       const remainStr = remainH > 0
-        ? `${remainH}h ${remainM}m remaining`
-        : `${remainM}m remaining`;
+        ? t('sched.remainingHM', { h: remainH, m: remainM })
+        : t('sched.remainingM', { m: remainM });
 
       this.scheduleDisplayEl.innerHTML =
-        `<span class="class-title">${escapeHtml(activeClass.title)}</span> ` +
+        `<span class="class-title">${escapeHtml(classDisplayName(activeClass.title))}</span> ` +
         `<span class="class-type">${escapeHtml(activeClass.classType)}</span><br>` +
         `<span class="class-time">${remainStr}</span>`;
       return;
@@ -1436,15 +1727,15 @@ class Renderer {
         return `${time}<span class="clock-ampm">${suffix}</span>`;
       };
       this.scheduleDisplayEl.innerHTML =
-        `<span class="class-title">Next: ${escapeHtml(nextClass.title)}</span> ` +
+        `<span class="class-title">${t('sched.next', { title: escapeHtml(classDisplayName(nextClass.title)) })}</span> ` +
         `<span class="class-type">${escapeHtml(nextClass.classType)}</span><br>` +
-        `<span class="class-time">${nextClass.dayOfWeek} at ${fmtTime(nextClass.startTime)}</span>`;
+        `<span class="class-time">${t('sched.dayAt', { day: t('day.' + nextClass.dayOfWeek), time: fmtTime(nextClass.startTime) })}</span>`;
       return;
     }
 
     // Schedule off: show nothing. Schedule on but empty: say so.
     this.scheduleDisplayEl.innerHTML = APP_SETTINGS.scheduleEnabled
-      ? `<span class="class-time">No classes scheduled</span>`
+      ? `<span class="class-time">${t('sched.none')}</span>`
       : '';
   }
 }
@@ -1625,6 +1916,9 @@ class OverlayManager {
     this._durSec = 0; // Duration picker value (seconds)
     this._durField = 'min'; // Duration picker: 'min' | 'sec'
     this._mainMenuItems = null; // Set while navigating from the main menu (Menu = back)
+    this._confirm = null; // Pending yes/no prompt: { title, body, yes, onYes }
+    this._chainsawStepDone = {}; // Steps already confirmed (back then forward keeps the value)
+    this._scheduleDay = 0; // Selected column in the schedule overlay
     // Supplies remaining seconds in the active class for preset defaults
     this.remainingClassSecProvider = null;
   }
@@ -1650,10 +1944,52 @@ class OverlayManager {
     this._trainingRounds = 0;
     this._selIndex = 0;
     this._mainMenuItems = null;
+    this._confirm = null;
     if (this.overlayEl) {
       this.overlayEl.classList.remove('active');
       this.overlayEl.innerHTML = '';
     }
+  }
+
+  /**
+   * Yes/no prompt for a destructive action. The highlight starts on "No" so
+   * a stray OK press does nothing; Menu also declines.
+   * @param {{title: string, body?: string, yes: string, onYes: function}} opts
+   */
+  showConfirm(opts) {
+    this._open = true;
+    this._mode = 'confirm-action';
+    this._confirm = opts;
+    this._selIndex = 0;
+    this._renderConfirmAction();
+  }
+
+  _renderConfirmAction() {
+    if (!this.overlayEl || !this._confirm) return;
+    const sel = (i) => i === this._selIndex ? ' mg-sel' : '';
+    const c = this._confirm;
+    this.overlayEl.innerHTML =
+      `<div class="advanced-menu overlay-content" style="text-align:center;">` +
+        `<div class="menu-title" style="margin-bottom:1vh;">${escapeHtml(c.title)}</div>` +
+        (c.body ? `<div class="menu-body">${escapeHtml(c.body)}</div>` : '') +
+        `<div class="menu-grid" style="grid-template-columns:1fr;margin-bottom:1vh;">` +
+          `<span class="mg-name mg-first mg-last${sel(0)}">${t('confirm.no')}</span>` +
+          `<span class="mg-name mg-first mg-last${sel(1)}">${escapeHtml(c.yes)}</span>` +
+        `</div>` +
+      `</div>`;
+    this.overlayEl.classList.add('active');
+  }
+
+  /**
+   * Maintenance list: install an update (asks first) or re-sync the class
+   * schedule. Reached from the main menu.
+   */
+  showMaintenance() {
+    this._open = true;
+    this._mode = 'confirm-update';
+    this._updateOrigin = 'maintenance';
+    this._selIndex = 0;
+    this._renderConfirmUpdate();
   }
 
   /**
@@ -1726,13 +2062,27 @@ class OverlayManager {
    */
   _back() {
     const m = this._mode;
-    if (m === 'confirm-update' || (m === 'update-error' && this._updateOrigin !== 'main')) {
+    if (m === 'confirm-app-update' && this._updateOrigin !== 'main') {
+      // Declined the install: back to the list it was picked from
+      this._mode = 'confirm-update';
+      this._selIndex = 0;
+      this._renderConfirmUpdate();
+      return;
+    }
+    if ((m === 'confirm-update' || m === 'update-error') && this._updateOrigin === 'credits') {
       this._mode = 'credits';
       this._renderCredits();
       return;
     }
+    if (m === 'update-error' && this._updateOrigin === 'maintenance') {
+      this._mode = 'confirm-update';
+      this._selIndex = 0;
+      this._renderConfirmUpdate();
+      return;
+    }
+    if (this._wizardBack()) return;
     if ((m && m.startsWith('training-')) || (m && m.startsWith('chainsaw-'))) {
-      // Keep the highlighted preset so Menu → OK re-enters the same one
+      // First step: back to the preset list, keeping the highlighted preset
       this._mode = 'training';
       this._inputBuffer = '';
       this._renderTrainingMenu();
@@ -1747,6 +2097,40 @@ class OverlayManager {
   }
 
   /**
+   * Menu inside a wizard: return to the previous prompt with its value
+   * instead of abandoning every step. Returns false on the first step.
+   * @private
+   */
+  _wizardBack() {
+    const m = this._mode;
+    const bufferFor = (value, def) => (value === def ? '' : String(value));
+    if (m === 'training-rounds') {
+      this._mode = 'training-minutes';
+      this._inputBuffer = bufferFor(this._trainingTotalMinutes, this._trainingDefaultMinutes);
+      this._renderTrainingSubEntry(this._trainingPrompt(), '');
+      return true;
+    }
+    if (m === 'training-rest') {
+      this._mode = 'training-rounds';
+      this._inputBuffer = bufferFor(this._trainingRounds, TRAINING_DEFAULT_ROUNDS);
+      this._renderTrainingSubEntry(this._trainingPrompt(), '');
+      return true;
+    }
+    const chain = { 'chainsaw-odd-rest': ['chainsaw-odd-round', () => this._chainsawOddRoundSec],
+      'chainsaw-even-round': ['chainsaw-odd-rest', () => this._chainsawOddRestSec],
+      'chainsaw-even-rest': ['chainsaw-even-round', () => this._chainsawEvenRoundSec],
+      'chainsaw-rounds': ['chainsaw-even-rest', () => this._chainsawEvenRestSec] };
+    if (chain[m]) {
+      this._mode = chain[m][0];
+      this._inputBuffer = '';
+      this._startDuration(chain[m][1]());
+      this._renderChainsawEntry(this._chainsawPrompt(), '');
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Handle a key press while the overlay is open.
    * Routes to the appropriate handler based on current mode.
    * @param {string} key - Normalized key ('0'-'9', 'Enter', 'Menu', 'ArrowUp', ...)
@@ -1756,7 +2140,7 @@ class OverlayManager {
 
     const modal = this._mode === 'credits' || this._mode === 'updating' ||
       this._mode === 'update-error' || this._mode === 'confirm-update' ||
-      this._mode === 'confirm-app-update';
+      this._mode === 'confirm-app-update' || this._mode === 'confirm-action';
 
     if (this._mode === 'updating') return; // Ignore keys while updating
 
@@ -1766,11 +2150,31 @@ class OverlayManager {
       return;
     }
 
-    // Schedule overlay is view-only (the on/off toggle lives in the main menu);
-    // any key other than the ring goes back
+    // Schedule overlay: ◀▶ pick the day shown large; any other non-ring key goes back
     if (this._mode === 'schedule') {
+      if (key === 'ArrowLeft' || key === 'ArrowRight') {
+        this._scheduleDay = moveSelection(this._scheduleDay, key === 'ArrowRight' ? 1 : -1, 7);
+        this._renderSchedule();
+        return;
+      }
       if (key.startsWith('Arrow') || key === 'StepUp' || key === 'StepDown') return;
       this._back();
+      return;
+    }
+
+    if (this._mode === 'confirm-action') {
+      if (key === 'ArrowUp' || key === 'ArrowDown') {
+        this._selIndex = moveSelection(this._selIndex, key === 'ArrowUp' ? -1 : 1, 2);
+        this._renderConfirmAction();
+      } else if (key === 'Enter') {
+        if (this._selIndex === 1) {
+          const onYes = this._confirm && this._confirm.onYes;
+          this.closeOverlay();
+          if (onYes) onYes();
+        } else {
+          this._back();
+        }
+      }
       return;
     }
 
@@ -1816,19 +2220,21 @@ class OverlayManager {
         this._selIndex = moveSelection(this._selIndex, key === 'ArrowUp' ? -1 : 1, 2);
         this._renderConfirmUpdate();
       } else if (key === '1' || (key === 'Enter' && this._selIndex === 0)) {
-        this._performUpdate('/update', 'Downloading latest code from Git');
+        // Installing restarts the timer: ask first, highlight on No
+        this._mode = 'confirm-app-update';
+        this._selIndex = 0;
+        this._renderUpdateConfirm();
       } else if (key === '2' || (key === 'Enter' && this._selIndex === 1)) {
-        this._performUpdate('/sync-schedule', 'Syncing class schedule');
+        this._performUpdate('/sync-schedule', t('maint.fetching'));
       } else {
-        this._mode = 'credits';
-        this._renderCredits();
+        this._back();
       }
     } else if (this._mode === 'confirm-app-update') {
       if (key === 'ArrowUp' || key === 'ArrowDown') {
         this._selIndex = moveSelection(this._selIndex, key === 'ArrowUp' ? -1 : 1, 2);
         this._renderUpdateConfirm();
       } else if (key === '2' || (key === 'Enter' && this._selIndex === 1)) {
-        this._performUpdate('/update', 'Downloading latest code from Git');
+        this._performUpdate('/update', t('maint.downloading'));
       } else if (key === '1' || key === 'Enter') {
         this._back(); // "No"
       }
@@ -1894,6 +2300,35 @@ class OverlayManager {
     return enabled;
   }
 
+  /**
+   * Flip quiet visuals (edge flash, steady outlines), persist it and apply
+   * the body class. The class travels to the secondary with the snapshot.
+   * @returns {boolean} the new enabled state
+   */
+  toggleQuietVisuals() {
+    const enabled = !APP_SETTINGS.quietVisuals;
+    APP_SETTINGS.quietVisuals = enabled;
+    try {
+      localStorage.setItem('bjj-timer-quiet-visuals', String(enabled));
+    } catch (e) {
+      // localStorage unavailable — setting applies for this session only
+    }
+    document.body.classList.toggle('quiet-visuals', enabled);
+    return enabled;
+  }
+
+  /**
+   * Cycle the UI language (English → Portuguese → English), persist it and
+   * tell the app to re-label what is on screen.
+   * @returns {string} the language now in effect
+   */
+  toggleLanguage() {
+    const i = LANGUAGES.indexOf(APP_SETTINGS.language);
+    const next = setLanguage(LANGUAGES[(i + 1) % LANGUAGES.length]);
+    if (this._onLanguageChange) this._onLanguageChange(next);
+    return next;
+  }
+
   _renderMainMenu() {
     if (!this.overlayEl) return;
     const _s = 'width="1.5em" height="1.5em" viewBox="0 0 24 24" style="vertical-align:-0.2em;"';
@@ -1909,7 +2344,7 @@ class OverlayManager {
     });
     this.overlayEl.innerHTML =
       `<div class="advanced-menu overlay-content">` +
-        `<div class="menu-title">Menu</div>` +
+        `<div class="menu-title">${t('menu.title')}</div>` +
         `<div class="menu-grid">${rows}</div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
@@ -1990,13 +2425,14 @@ class OverlayManager {
   _startTrainingPreset(mode) {
     this._trainingMode = mode;
     this._trainingTotalMinutes = 0;
+    this._trainingRounds = TRAINING_DEFAULT_ROUNDS;
     // Calculate default minutes from remaining class time (nearest multiple of 5, rounded down)
     const remainingSec = this._getRemainingClassSec();
     this._trainingDefaultMinutes = remainingSec > 0 ? Math.floor(remainingSec / 60 / 5) * 5 : 0;
     if (this._trainingDefaultMinutes <= 0) this._trainingDefaultMinutes = TRAINING_DEFAULT_MINUTES;
     this._mode = 'training-minutes';
     this._inputBuffer = '';
-    this._renderTrainingSubEntry('Total minutes:', '');
+    this._renderTrainingSubEntry(this._trainingPrompt(), '');
   }
 
   _handleTrainingSubKey(key) {
@@ -2012,7 +2448,7 @@ class OverlayManager {
         this._trainingTotalMinutes = this._trainingDefaultMinutes;
         this._mode = 'training-rounds';
         this._inputBuffer = '';
-        this._renderTrainingSubEntry('How many rounds?', '');
+        this._renderTrainingSubEntry(this._trainingPrompt(), '');
         return;
       }
       if (this._mode === 'training-rest') {
@@ -2027,7 +2463,7 @@ class OverlayManager {
         return;
       }
       if (!isNumeric(raw) || raw === '') {
-        this._renderTrainingSubEntry(this._trainingPrompt(), 'Please enter a number');
+        this._renderTrainingSubEntry(this._trainingPrompt(), t('wizard.enterNumber'));
         this._inputBuffer = '';
         return;
       }
@@ -2035,17 +2471,17 @@ class OverlayManager {
 
       if (this._mode === 'training-minutes') {
         if (value < 1) {
-          this._renderTrainingSubEntry(this._trainingPrompt(), 'Need at least 1 minute');
+          this._renderTrainingSubEntry(this._trainingPrompt(), t('wizard.min1minute'));
           this._inputBuffer = '';
           return;
         }
         this._trainingTotalMinutes = value;
         this._mode = 'training-rounds';
         this._inputBuffer = '';
-        this._renderTrainingSubEntry('How many rounds?', '');
+        this._renderTrainingSubEntry(this._trainingPrompt(), '');
       } else if (this._mode === 'training-rounds') {
         if (value < 2) {
-          this._renderTrainingSubEntry('How many rounds?', 'Need at least 2 rounds');
+          this._renderTrainingSubEntry(this._trainingPrompt(), t('wizard.min2rounds'));
           this._inputBuffer = '';
           return;
         }
@@ -2125,40 +2561,60 @@ class OverlayManager {
   _renderDurationControl(kind) {
     const mins = String(Math.floor(this._durSec / 60)).padStart(2, '0');
     const secs = String(this._durSec % 60).padStart(2, '0');
-    return `<div class="overlay-duration dur-${kind} time-setting-${this._durField === 'min' ? 'minutes' : 'seconds'}">` +
-      `<span class="ts-minutes">${mins}</span>:<span class="ts-seconds">${secs}</span></div>`;
+    const minSel = this._durField === 'min';
+    return `<div class="overlay-duration-wrap">` +
+      `<div class="overlay-duration dur-${kind} time-setting-${minSel ? 'minutes' : 'seconds'}">` +
+      `<span class="ts-minutes">${mins}</span>:<span class="ts-seconds">${secs}</span></div>` +
+      `<div class="overlay-duration-labels">` +
+        `<span class="${minSel ? 'dur-label-sel' : ''}">${t('wizard.minutes')}</span>` +
+        `<span class="${minSel ? '' : 'dur-label-sel'}">${t('wizard.seconds')}</span>` +
+      `</div></div>`;
   }
 
   /**
    * Shared wizard frame: fixed-size box, title, prompt, body, error, hint.
    */
-  _renderWizard(titleHtml, prompt, bodyHtml, errorMsg) {
+  _renderWizard(titleHtml, prompt, bodyHtml, errorMsg, step) {
     if (!this.overlayEl) return;
+    const stepHtml = step ? `<span class="overlay-wizard-step">${t('wizard.step', { n: step[0], m: step[1] })}</span>` : '';
     this.overlayEl.innerHTML =
       `<div class="overlay-content overlay-wizard">` +
-      `<div class="overlay-wizard-title">${titleHtml}</div>` +
+      `<div class="overlay-wizard-title">${titleHtml}${stepHtml}</div>` +
       `<div class="overlay-prompt">${prompt}</div>` +
       `<div class="overlay-wizard-body">${bodyHtml}</div>` +
       `<div class="overlay-error">${errorMsg}</div>` +
+      `<div class="overlay-wizard-nav">${step && step[0] > 1 ? t('wizard.prev') : t('wizard.back')} · ${t('wizard.nav')}</div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
   }
 
   /** Big numeric display for counts (minutes total, rounds). */
   _renderNumberControl(display, dim) {
-    return `<div class="overlay-input${dim ? ' overlay-input-dim' : ''}">${display}</div>`;
+    return `<div class="overlay-input${dim ? ' overlay-input-dim' : ''}">${display}</div>` +
+      (dim ? `<div class="overlay-default-note">${t('wizard.suggested')}</div>` : '');
+  }
+
+  /** Training wizard step index for the current mode. */
+  _trainingStep() {
+    return [{ 'training-minutes': 1, 'training-rounds': 2, 'training-rest': 3 }[this._mode] || 1, 3];
+  }
+
+  /** Chainsaw wizard step index for the current mode. */
+  _chainsawStep() {
+    const order = ['chainsaw-odd-round', 'chainsaw-odd-rest', 'chainsaw-even-round', 'chainsaw-even-rest', 'chainsaw-rounds'];
+    return [Math.max(0, order.indexOf(this._mode)) + 1, order.length];
   }
 
   _renderTrainingSubEntry(prompt, errorMsg) {
     if (!this.overlayEl) return;
     const mode = TRAINING_MODES[this._trainingMode] || TRAINING_MODES.ladder_down;
     const _s = 'width="1.5em" height="1.5em" viewBox="0 0 24 24" style="vertical-align:-0.25em;margin-right:0.4em;"';
-    const title = `${ICONS[mode.icon](_s)}${mode.label}`;
+    const title = `${ICONS[mode.icon](_s)}${escapeHtml(presetDisplayName(mode.label))}`;
     if (this._mode === 'training-rest') {
-      this._renderWizard(title, prompt, this._renderDurationControl('rest'), errorMsg);
+      this._renderWizard(title, prompt, this._renderDurationControl('rest'), errorMsg, this._trainingStep());
       return;
     }
-    // Empty input shows the value OK would accept, dimmed
+    // Empty input shows the value OK would accept, marked as suggested
     let display = this._inputBuffer;
     let dim = false;
     if (!display) {
@@ -2166,13 +2622,13 @@ class OverlayManager {
       if (this._mode === 'training-minutes') display = String(this._trainingDefaultMinutes || TRAINING_DEFAULT_MINUTES);
       else display = String(TRAINING_DEFAULT_ROUNDS);
     }
-    this._renderWizard(title, prompt, this._renderNumberControl(display, dim), errorMsg);
+    this._renderWizard(title, prompt, this._renderNumberControl(display, dim), errorMsg, this._trainingStep());
   }
 
   _trainingPrompt() {
-    if (this._mode === 'training-minutes') return 'Total minutes:';
-    if (this._mode === 'training-rounds') return 'How many rounds?';
-    return 'Rest between rounds:';
+    if (this._mode === 'training-minutes') return t('wizard.totalMinutes');
+    if (this._mode === 'training-rounds') return t('wizard.howManyRounds');
+    return t('wizard.restBetween');
   }
 
   _finishTrainingPreset(restSec) {
@@ -2182,7 +2638,7 @@ class OverlayManager {
     // Rounds snap to a 30s minimum each — if rest eats the budget the plan would
     // silently exceed the requested total, so reject and re-prompt instead.
     if (availableSec - totalRestSec < this._trainingRounds * 30) {
-      this._renderTrainingSubEntry(this._trainingPrompt(), 'Rest too long — leaves no time for rounds');
+      this._renderTrainingSubEntry(this._trainingPrompt(), t('wizard.restTooLong'));
       this._inputBuffer = '';
       return;
     }
@@ -2212,6 +2668,7 @@ class OverlayManager {
     this._chainsawEvenRoundSec = 0;
     this._chainsawEvenRestSec = 0;
     this._chainsawDefaultRounds = 0;
+    this._chainsawStepDone = {};
     this._startDuration(CHAINSAW_DEFAULT_ROUND_SEC);
     this._renderChainsawEntry(this._chainsawPrompt(), '');
   }
@@ -2229,20 +2686,24 @@ class OverlayManager {
       }
       if (key !== 'Enter') return;
       const sec = this._durSec;
+      const done = this._chainsawStepDone;
+      done[this._mode] = true;
+      // A step already confirmed once (then revisited with Menu) keeps its value
+      const startFrom = (mode, stored, fallback) => this._startDuration(done[mode] ? stored : fallback);
       if (this._mode === 'chainsaw-odd-round') {
-        if (sec === 0) { this._renderChainsawEntry(this._chainsawPrompt(), 'Round needs a duration'); return; }
+        if (sec === 0) { this._renderChainsawEntry(this._chainsawPrompt(), t('chainsaw.needDuration')); return; }
         this._chainsawOddRoundSec = sec;
         this._mode = 'chainsaw-odd-rest';
-        this._startDuration(CHAINSAW_DEFAULT_REST_SEC);
+        startFrom(this._mode, this._chainsawOddRestSec, CHAINSAW_DEFAULT_REST_SEC);
       } else if (this._mode === 'chainsaw-odd-rest') {
         this._chainsawOddRestSec = sec;
         this._mode = 'chainsaw-even-round';
-        this._startDuration(this._chainsawOddRoundSec); // even round starts from odd round
+        startFrom(this._mode, this._chainsawEvenRoundSec, this._chainsawOddRoundSec); // even round starts from odd round
       } else if (this._mode === 'chainsaw-even-round') {
-        if (sec === 0) { this._renderChainsawEntry(this._chainsawPrompt(), 'Round needs a duration'); return; }
+        if (sec === 0) { this._renderChainsawEntry(this._chainsawPrompt(), t('chainsaw.needDuration')); return; }
         this._chainsawEvenRoundSec = sec;
         this._mode = 'chainsaw-even-rest';
-        this._startDuration(this._chainsawOddRestSec); // even rest starts from odd rest
+        startFrom(this._mode, this._chainsawEvenRestSec, this._chainsawOddRestSec); // even rest starts from odd rest
       } else {
         this._chainsawEvenRestSec = sec;
         // Calculate default rounds from remaining class time
@@ -2262,13 +2723,13 @@ class OverlayManager {
         return;
       }
       if (!isNumeric(raw) || raw === '') {
-        this._renderChainsawEntry(this._chainsawPrompt(), 'Enter a number');
+        this._renderChainsawEntry(this._chainsawPrompt(), t('chainsaw.enterNumber'));
         this._inputBuffer = '';
         return;
       }
       const rounds = parseInt(raw, 10);
       if (rounds < 1) {
-        this._renderChainsawEntry(this._chainsawPrompt(), 'Need at least 1 round');
+        this._renderChainsawEntry(this._chainsawPrompt(), t('chainsaw.min1round'));
         this._inputBuffer = '';
         return;
       }
@@ -2291,19 +2752,19 @@ class OverlayManager {
   }
 
   _chainsawPrompt() {
-    if (this._mode === 'chainsaw-odd-round') return 'Odd round duration:';
-    if (this._mode === 'chainsaw-odd-rest') return 'Odd round rest:';
-    if (this._mode === 'chainsaw-even-round') return 'Even round duration:';
-    if (this._mode === 'chainsaw-even-rest') return 'Even round rest:';
-    return 'How many rounds:';
+    if (this._mode === 'chainsaw-odd-round') return t('chainsaw.oddRound');
+    if (this._mode === 'chainsaw-odd-rest') return t('chainsaw.oddRest');
+    if (this._mode === 'chainsaw-even-round') return t('chainsaw.evenRound');
+    if (this._mode === 'chainsaw-even-rest') return t('chainsaw.evenRest');
+    return t('chainsaw.rounds');
   }
 
   _renderChainsawEntry(prompt, errorMsg) {
     if (!this.overlayEl) return;
-    const title = ICONS.chainsaw('width="1.5em" height="1.5em" viewBox="0 0 24 24" style="vertical-align:-0.25em;margin-right:0.4em;"') + 'Chainsaw';
+    const title = ICONS.chainsaw('width="1.5em" height="1.5em" viewBox="0 0 24 24" style="vertical-align:-0.25em;margin-right:0.4em;"') + escapeHtml(presetDisplayName('Chainsaw'));
     if (this._chainsawIsDurationStep()) {
       const kind = this._mode === 'chainsaw-odd-round' || this._mode === 'chainsaw-even-round' ? 'round' : 'rest';
-      this._renderWizard(title, prompt, this._renderDurationControl(kind), errorMsg);
+      this._renderWizard(title, prompt, this._renderDurationControl(kind), errorMsg, this._chainsawStep());
       return;
     }
     let display = this._inputBuffer;
@@ -2312,7 +2773,7 @@ class OverlayManager {
       dim = true;
       display = String(this._chainsawDefaultRounds || TRAINING_DEFAULT_ROUNDS);
     }
-    this._renderWizard(title, prompt, this._renderNumberControl(display, dim), errorMsg);
+    this._renderWizard(title, prompt, this._renderNumberControl(display, dim), errorMsg, this._chainsawStep());
   }
 
   _finishChainsaw(evenRestSec, numRounds) {
@@ -2383,21 +2844,21 @@ class OverlayManager {
     let rows = '';
     // Header row
     rows += `<span></span><span></span>` +
-            `<span class="mg-note" style="color:var(--text-round);font-weight:700;">Round</span>` +
-            `<span class="mg-note" style="color:var(--text-rest);font-weight:700;">Rest</span>`;
+            `<span class="mg-note" style="color:var(--text-round);font-weight:700;">${t('label.round')}</span>` +
+            `<span class="mg-note" style="color:var(--text-rest);font-weight:700;">${t('label.rest')}</span>`;
     presetNames.forEach((name, i) => {
       const p = APP_SETTINGS.competitionPresets[name];
       const icon = presetIcon(name, _s) || ICONS.belt(_s, '#aaa');
       const sel = i === this._selIndex ? ' mg-sel' : '';
       rows += `<span class="mg-icon mg-first${sel}">${icon}</span>` +
-              `<span class="mg-name${sel}">${escapeHtml(name)}</span>` +
+              `<span class="mg-name${sel}">${escapeHtml(presetDisplayName(name))}</span>` +
               `<span class="mg-note${sel}" style="color:var(--text-round);">${formatTime(p.roundDurationSec)}</span>` +
               `<span class="mg-note mg-last${sel}" style="color:var(--text-rest);">${formatTime(p.restDurationSec)}</span>`;
     });
 
     this.overlayEl.innerHTML =
       `<div class="advanced-menu overlay-content">` +
-        `<div class="menu-title">Competition Presets</div>` +
+        `<div class="menu-title">${t('competition.title')}</div>` +
         `<div class="menu-grid-5">${rows}</div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
@@ -2411,13 +2872,13 @@ class OverlayManager {
     TRAINING_MENU_ITEMS.forEach((it, i) => {
       const sel = i === this._selIndex ? ' mg-sel' : '';
       rows += `<span class="mg-icon mg-first${sel}">${ICONS[it.icon](_s)}</span>` +
-              `<span class="mg-name${sel}">${it.name}</span>` +
-              `<span class="mg-note mg-last${sel}">${it.note}</span>`;
+              `<span class="mg-name${sel}">${escapeHtml(presetDisplayName(it.name))}</span>` +
+              `<span class="mg-note mg-last${sel}">${escapeHtml(t('note.' + it.name))}</span>`;
     });
 
     this.overlayEl.innerHTML =
       `<div class="advanced-menu overlay-content">` +
-        `<div class="menu-title">Training Presets</div>` +
+        `<div class="menu-title">${t('training.title')}</div>` +
         `<div class="menu-grid">${rows}</div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
@@ -2426,16 +2887,17 @@ class OverlayManager {
   _renderCredits() {
     if (!this.overlayEl) return;
     this._creditsStarCount = 0;
+    this._updateOrigin = 'credits'; // Maintenance reached from here returns here
     this.overlayEl.innerHTML =
       `<div class="overlay-content" style="text-align:center;">` +
         `<div style="margin-bottom:2vh;">` +
           `<img src="paco.png" alt="Paco" style="width:clamp(6rem,15vw,12rem);height:clamp(6rem,15vw,12rem);border-radius:50%;object-fit:cover;border:3px solid rgba(255,255,255,0.2);">` +
         `</div>` +
-        `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:3vh;">Credits</div>` +
+        `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:3vh;">${t('credits.title')}</div>` +
         `<div style="font-size:clamp(1rem,2vw,2rem);color:var(--text-label);display:grid;grid-template-columns:auto 1fr;gap:0.8vh 1.5vw;text-align:left;">` +
-          `<span style="color:var(--accent-green);font-weight:700;">Paco</span><span>The good parts</span>` +
-          `<span style="color:var(--accent-green);font-weight:700;">Reevu</span><span>The hard parts</span>` +
-          `<span style="color:var(--accent-green);font-weight:700;">Vy</span><span>The ugly parts</span>` +
+          `<span style="color:var(--accent-green);font-weight:700;">Paco</span><span>${t('credits.good')}</span>` +
+          `<span style="color:var(--accent-green);font-weight:700;">Reevu</span><span>${t('credits.hard')}</span>` +
+          `<span style="color:var(--accent-green);font-weight:700;">Vy</span><span>${t('credits.ugly')}</span>` +
         `</div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
@@ -2446,10 +2908,10 @@ class OverlayManager {
     const sel = (i) => i === this._selIndex ? ' mg-sel' : '';
     this.overlayEl.innerHTML =
       `<div class="advanced-menu overlay-content" style="text-align:center;">` +
-        `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:3vh;">System Update</div>` +
-        `<div class="menu-grid" style="grid-template-columns:1fr;margin-bottom:3vh;">` +
-          `<span class="mg-name mg-first mg-last${sel(0)}">Download latest code from Git</span>` +
-          `<span class="mg-name mg-first mg-last${sel(1)}">Sync class schedule</span>` +
+        `<div class="menu-title">${t('maint.title')}</div>` +
+        `<div class="menu-grid" style="grid-template-columns:1fr;margin-bottom:1vh;">` +
+          `<span class="mg-name mg-first mg-last${sel(0)}">${t('maint.install')}</span>` +
+          `<span class="mg-name mg-first mg-last${sel(1)}">${t('maint.sync')}</span>` +
         `</div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
@@ -2465,11 +2927,11 @@ class OverlayManager {
     const sel = (i) => i === this._selIndex ? ' mg-sel' : '';
     this.overlayEl.innerHTML =
       `<div class="advanced-menu overlay-content" style="text-align:center;">` +
-        `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:1vh;">Update app?</div>` +
-        `<div style="font-size:clamp(0.9rem,1.8vw,1.8rem);color:var(--text-muted);margin-bottom:3vh;">Downloads the latest code from Git and reloads the timer</div>` +
-        `<div class="menu-grid" style="grid-template-columns:1fr;margin-bottom:3vh;">` +
-          `<span class="mg-name mg-first mg-last${sel(0)}">No</span>` +
-          `<span class="mg-name mg-first mg-last${sel(1)}">Yes, update now</span>` +
+        `<div class="menu-title" style="margin-bottom:1vh;">${t('maint.confirmTitle')}</div>` +
+        `<div class="menu-body">${t('maint.confirmBody')}</div>` +
+        `<div class="menu-grid" style="grid-template-columns:1fr;margin-bottom:1vh;">` +
+          `<span class="mg-name mg-first mg-last${sel(0)}">${t('confirm.no')}</span>` +
+          `<span class="mg-name mg-first mg-last${sel(1)}">${t('maint.yes')}</span>` +
         `</div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
@@ -2477,7 +2939,7 @@ class OverlayManager {
 
   _performUpdate(endpoint, description) {
     if (!navigator.onLine) {
-      this._showUpdateError('No WiFi — check your network connection');
+      this._showUpdateError(t('maint.noWifi'));
       return;
     }
 
@@ -2485,8 +2947,8 @@ class OverlayManager {
     if (!this.overlayEl) return;
     this.overlayEl.innerHTML =
       `<div class="overlay-content" style="text-align:center;">` +
-        `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:3vh;">Updating...</div>` +
-        `<div style="font-size:clamp(1rem,2vw,2rem);color:var(--text-muted);">${description}</div>` +
+        `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--text-primary);margin-bottom:3vh;">${t('maint.updating')}</div>` +
+        `<div style="font-size:clamp(1rem,2vw,2rem);color:var(--text-muted);">${escapeHtml(description)}</div>` +
         `<div style="margin-top:3vh;">` +
           `<div style="width:clamp(10rem,30vw,20rem);height:4px;background:rgba(255,255,255,0.1);border-radius:2px;margin:0 auto;overflow:hidden;">` +
             `<div style="width:100%;height:100%;background:var(--accent-green);border-radius:2px;animation:progress-bar 2s ease-in-out infinite;"></div>` +
@@ -2514,19 +2976,19 @@ class OverlayManager {
       .then(res => res.json())
       .then(data => {
         if (data.success) {
+          const done = endpoint === '/update' ? t('maint.installed') : t('maint.synced');
           this.overlayEl.innerHTML =
             `<div class="overlay-content" style="text-align:center;">` +
-              `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--accent-green);margin-bottom:2vh;">✓ Updated</div>` +
-              `<div style="font-size:clamp(1rem,2vw,2rem);color:var(--text-muted);">${escapeHtml(data.output || 'Success')}</div>` +
-              `<div style="margin-top:2vh;font-size:clamp(1rem,2vw,2rem);color:var(--text-label);">Reloading...</div>` +
+              `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--accent-green);margin-bottom:2vh;">✓ ${done}</div>` +
+              `<div style="margin-top:2vh;font-size:clamp(1rem,2vw,2rem);color:var(--text-label);">${t('maint.restarting')}</div>` +
             `</div>`;
           setTimeout(() => window.location.reload(), 1500);
         } else {
-          this._showUpdateError(data.error || 'Unknown error');
+          this._showUpdateError(data.error || t('maint.unknown'));
         }
       })
       .catch(err => {
-        this._showUpdateError(err.name === 'AbortError' ? 'Timed out after 60s' : (err.message || 'Connection failed'));
+        this._showUpdateError(err.name === 'AbortError' ? t('maint.timeout') : (err.message || t('maint.connFailed')));
       })
       .finally(() => clearTimeout(timeoutId));
   }
@@ -2536,9 +2998,9 @@ class OverlayManager {
     if (!this.overlayEl) return;
     this.overlayEl.innerHTML =
       `<div class="overlay-content" style="text-align:center;">` +
-        `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--accent-red);margin-bottom:2vh;">Update Failed</div>` +
+        `<div style="font-size:clamp(1.5rem,3.5vw,3.5rem);color:var(--accent-red);margin-bottom:2vh;">${t('maint.failed')}</div>` +
         `<div style="font-size:clamp(0.9rem,1.8vw,1.8rem);color:var(--text-muted);max-width:60vw;word-break:break-word;">${escapeHtml(message)}</div>` +
-        `<div style="margin-top:3vh;font-size:clamp(0.8rem,1.5vw,1.5rem);color:var(--text-muted);">Press any key to go back</div>` +
+        `<div style="margin-top:3vh;font-size:clamp(0.8rem,1.5vw,1.5rem);color:var(--text-muted);">${t('maint.menuReturn')}</div>` +
       `</div>`;
   }
 
@@ -2546,13 +3008,16 @@ class OverlayManager {
     this._open = true;
     this._mode = 'schedule';
     this._scheduleData = schedule;
+    const jsDay = new Date().getDay(); // 0 = Sunday
+    this._scheduleDay = jsDay === 0 ? 6 : jsDay - 1; // Monday-first column
     this._renderSchedule();
   }
 
   _renderSchedule() {
     if (!this.overlayEl) return;
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const dayAbbr = { Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu', Friday: 'Fri', Saturday: 'Sat', Sunday: 'Sun' };
+    const dayAbbr = {};
+    days.forEach(d => { dayAbbr[d] = t('dayAbbr.' + d); });
     const byDay = {};
     days.forEach(d => byDay[d] = []);
     (this._scheduleData || []).forEach(e => {
@@ -2569,23 +3034,42 @@ class OverlayManager {
       return `${time}<span class="clock-ampm">${suffix}</span>`;
     };
 
+    const jsDay = new Date().getDay();
+    const todayIdx = jsDay === 0 ? 6 : jsDay - 1;
+    const selIdx = Math.min(6, Math.max(0, this._scheduleDay | 0));
     let cols = '';
-    days.forEach(d => {
+    days.forEach((d, i) => {
       let cells = '';
       byDay[d].forEach(e => {
         cells += `<div class="sched-class">`
-          + `<span class="sched-time">${fmt(e.startTime)}–${fmt(e.endTime)}</span>`
-          + `<span class="sched-title">${escapeHtml(e.title)}</span>`
+          + `<span class="sched-time">${fmt(e.startTime)} - ${fmt(e.endTime)}</span>`
+          + `<span class="sched-title">${escapeHtml(classDisplayName(e.title))}</span>`
           + `</div>`;
       });
-      if (!byDay[d].length) cells = '<div class="sched-class sched-empty">—</div>';
-      cols += `<div class="sched-day"><div class="sched-day-name">${dayAbbr[d]}</div>${cells}</div>`;
+      if (!byDay[d].length) cells = `<div class="sched-class sched-empty">${t('sched.empty')}</div>`;
+      const cls = 'sched-day' + (i === selIdx ? ' sched-sel' : '') + (i === todayIdx ? ' sched-today' : '');
+      cols += `<div class="${cls}"><div class="sched-day-name">${dayAbbr[d]}</div>${cells}</div>`;
     });
+
+    // Selected day in large type (◀▶ moves the selection; starts on today)
+    const selDay = days[selIdx];
+    let detail = '';
+    byDay[selDay].forEach(e => {
+      detail += `<div class="sched-detail-row">`
+        + `<span class="sched-detail-time">${fmt(e.startTime)} - ${fmt(e.endTime)}</span>`
+        + `<span class="sched-detail-title">${escapeHtml(classDisplayName(e.title))}</span>`
+        + `</div>`;
+    });
+    if (!byDay[selDay].length) detail = `<div class="sched-detail-row sched-detail-none">${t('sched.noClasses')}</div>`;
 
     this.overlayEl.innerHTML =
       `<div class="schedule-overlay overlay-content">`
-      + `<div class="schedule-title">Weekly Schedule</div>`
+      + `<div class="schedule-title">${t('sched.title')}</div>`
       + `<div class="schedule-grid">${cols}</div>`
+      + `<div class="sched-detail">`
+      + `<div class="sched-detail-day">◀ ${t('day.' + selDay)}${selIdx === todayIdx ? ` · ${t('sched.today')}` : ''} ▶</div>`
+      + detail
+      + `</div>`
       + `</div>`;
     this.overlayEl.classList.add('active');
   }
@@ -2948,7 +3432,6 @@ class InputHandler {
     document.body.classList.add('time-setting');
     this._renderTimeSettingDisplay();
     this._updateTimeSettingBar();
-    this.renderer.updateStatusBar('editing');
   }
 
   /**
@@ -3032,14 +3515,21 @@ class InputHandler {
   }
 
   /**
-   * The top "Editing: <field>" header was removed; the highlighted digits are
-   * the only editing indicator. The bar element is kept (empty) for display sync.
+   * Editing feedback: the top header bar stays empty (element kept for display
+   * sync); the state label under the timers names the field and the controls.
    */
   _updateTimeSettingBar() {
     const bar = document.getElementById('edit-instruction-bar');
-    if (!bar) return;
-    bar.innerHTML = '';
-    bar.classList.remove('active');
+    if (bar) { bar.innerHTML = ''; bar.classList.remove('active'); }
+    if (!this._timeSettingMode) return;
+    const f = this._timeSettingField || '';
+    const base = f.startsWith('t2-') ? f.slice(3) : f;
+    const name = base ? t('field.' + base) : '';
+    const field = f.startsWith('t2-') ? t('field.timer2', { field: name }) : name;
+    const dualActive = this._dualMode && this._dualEngine && this._dualState &&
+      this._dualState.phase !== PHASES.IDLE;
+    const running = this.state.phase !== PHASES.IDLE || dualActive;
+    this.renderer.updateStatusBar('editing', { field: field.trim(), running });
   }
 
   /**
@@ -3173,7 +3663,7 @@ class InputHandler {
     this.audioManager.playCancel();
     this._ready = true;
     document.body.classList.remove('timer-idle');
-    this.renderer.updateStatusBar('editing');
+    this._updateTimeSettingBar();
   }
 
   /**
@@ -3358,9 +3848,10 @@ class InputHandler {
 
   /**
    * Menu tap: open the main menu. While idle it lists presets, schedule and
-   * settings; while a timer runs it is just Reset, Pause/Resume, Reset timer
-   * and Blank screen. "Reset" is always the first row and only appears when
-   * the app is not already in its default state.
+   * settings; while a timer runs it is Pause/Resume first (a stray OK must
+   * never discard the session), then Stop and keep settings, Restore defaults
+   * (asks first) and Hide display. While idle, "Restore defaults" leads only
+   * when the app is not already in its default state.
    */
   _openMainMenu() {
     if (this.overlayManager.isOpen()) return;
@@ -3368,54 +3859,69 @@ class InputHandler {
       this._dualState.phase !== PHASES.IDLE;
     const idle = this.state.phase === PHASES.IDLE && !dualActive;
     const items = [];
+    const hideItem = { id: 'blank', icon: 'eyeOff', name: t('menu.hide'), note: t('menu.hide.note'), action: () => {
+      this.renderer.toggleStealth();
+      this.renderer.applyStealth(this.state.phase);
+    } };
     if (!idle) {
       // While a timer runs the menu is a short action list; every item closes it.
       const paused = this.state.paused || (dualActive && this._dualState.paused);
-      items.push(this._resetMenuItem());
-      items.push({ id: 'pause', icon: paused ? 'play' : 'pause', name: paused ? 'Resume' : 'Pause', action: () => {
+      items.push({ id: 'pause', icon: paused ? 'play' : 'pause', name: paused ? t('menu.resume') : t('menu.pause'), action: () => {
         this._handleEnterShortPress();
       } });
-      items.push({ id: 'reset-timer', icon: 'repeat', name: 'Reset timer', action: () => {
+      items.push({ id: 'reset-timer', icon: 'stop', name: t('menu.stopKeep'), action: () => {
         this._handleZeroPress(); // stop → back to the ready state with the same settings
       } });
-      items.push({ id: 'blank', icon: 'blank', name: 'Blank screen', action: () => {
-        this.renderer.toggleStealth();
-        this.renderer.applyStealth(this.state.phase);
-      } });
+      items.push(this._resetMenuItem(true));
+      items.push(hideItem);
       this.overlayManager.showMainMenu(items);
       this.renderer.updateStatusBar('menu');
       return;
     }
-    if (!this._isDefaultState()) items.push(this._resetMenuItem());
-    items.push({ id: 'training', icon: 'ladderUp', name: 'Training', submenu: true, action: () => {
+    // Ordered by how often a coach reaches for each row: presets first, then
+    // the session reset, schedule and display rows, settings, and the
+    // rarely-used language / maintenance / about rows last.
+    const onOff = (v) => (v ? t('menu.on') : t('menu.off'));
+    items.push({ id: 'training', icon: 'ladderUp', name: t('menu.training'), submenu: true, action: () => {
       this.overlayManager.showTrainingMenu({ ...this.state.config }, (cfg) => this._applyMenuConfig(cfg));
     } });
-    items.push({ id: 'competition', icon: 'belt', name: 'Competition', submenu: true, action: () => {
+    items.push({ id: 'competition', icon: 'belt', name: t('menu.competition'), submenu: true, action: () => {
       this.overlayManager.showCompetitionMenu({ ...this.state.config }, (cfg) => this._applyMenuConfig(cfg));
     } });
-    items.push({ id: 'schedule', icon: 'tabata', name: 'Schedule', submenu: true, action: () => {
+    if (!this._isDefaultState()) items.push(this._resetMenuItem(false));
+    items.push({ id: 'schedule', icon: 'calendar', name: t('menu.schedule'), submenu: true, action: () => {
       this.overlayManager.showSchedule(this._scheduleManager ? this._scheduleManager._schedule : []);
     } });
     if (this._displayModeCallback) {
-      items.push({ id: 'screens', icon: 'dual', name: 'Screens', action: () => {
-        this._displayModeCallback();
-        this._restoreStatusBar();
-      } });
+      items.push({ id: 'screens', icon: 'dual', name: t('menu.screens'), toggle: true,
+        note: () => (this._displayModeLabelCallback ? this._displayModeLabelCallback() : ''),
+        action: () => { this._displayModeCallback(); } });
     }
-    items.push({ id: 'blank', icon: 'blank', name: 'Blank screen', action: () => {
-      this.renderer.toggleStealth();
-      this.renderer.applyStealth(this.state.phase);
-    } });
-    items.push({ id: 'holiday', icon: 'snow', name: 'Holiday theme', toggle: true,
-      note: () => (APP_SETTINGS.holidayThemeEnabled ? 'ON' : 'OFF'),
-      action: () => { this.overlayManager.toggleHolidayTheme(); } });
-    items.push({ id: 'schedule-toggle', icon: 'tabata', name: 'Weekly schedule', toggle: true,
-      note: () => (APP_SETTINGS.scheduleEnabled ? 'ON' : 'OFF'),
+    items.push(hideItem);
+    items.push({ id: 'schedule-toggle', icon: 'clock', name: t('menu.followSchedule'), toggle: true,
+      note: () => onOff(APP_SETTINGS.scheduleEnabled),
       action: () => { this.overlayManager.toggleSchedule(); } });
-    items.push({ id: 'update', icon: 'download', name: 'Update app', submenu: true, action: () => {
-      this.overlayManager.showUpdateConfirm();
+    items.push({ id: 'holiday', icon: 'snow', name: t('menu.holiday'), toggle: true,
+      note: () => onOff(APP_SETTINGS.holidayThemeEnabled),
+      action: () => { this.overlayManager.toggleHolidayTheme(); } });
+    items.push({ id: 'quiet', icon: 'moon', name: t('menu.quiet'), toggle: true,
+      note: () => onOff(APP_SETTINGS.quietVisuals),
+      action: () => { this.overlayManager.toggleQuietVisuals(); } });
+    items.push({ id: 'language', icon: 'globe', name: t('menu.language'), toggle: true,
+      note: () => LANGUAGE_NAMES[APP_SETTINGS.language] || APP_SETTINGS.language,
+      action: () => {
+        // Every row name changes language, so rebuild the menu in place and
+        // keep the highlight on this row
+        const sel = this.overlayManager._selIndex;
+        this.overlayManager.toggleLanguage();
+        this.overlayManager.closeOverlay();
+        this._openMainMenu();
+        this.overlayManager._selIndex = sel;
+      } });
+    items.push({ id: 'maintenance', icon: 'wrench', name: t('menu.maintenance'), submenu: true, action: () => {
+      this.overlayManager.showMaintenance();
     } });
-    items.push({ id: 'credits', icon: 'gear', name: 'About', submenu: true, action: () => {
+    items.push({ id: 'credits', icon: 'info', name: t('menu.about'), submenu: true, action: () => {
       this.overlayManager.showCredits();
     } });
     this.overlayManager.showMainMenu(items);
@@ -3443,14 +3949,25 @@ class InputHandler {
   }
 
   /**
-   * Main-menu "Reset" row: stop any running timer, drop the selection and go
-   * back to the default state (app defaults or the active class preset).
+   * Main-menu "Restore defaults" row: stop any running timer, drop the
+   * selection and go back to the default state (app defaults or the active
+   * class preset). While a session is live it asks first.
+   * @param {boolean} confirm
    */
-  _resetMenuItem() {
-    return { id: 'reset', icon: 'power', name: 'Reset', action: () => {
+  _resetMenuItem(confirm) {
+    const restore = () => {
       this._handleZeroPress();        // stop a running timer (no-op while idle & not ready)
       if (this._ready) this._ready = false;
       this._handleEnterLongPress();   // idle full reset to defaults
+    };
+    if (!confirm) return { id: 'reset', icon: 'undo', name: t('menu.restore'), action: restore };
+    return { id: 'reset', icon: 'undo', name: t('menu.restore'), submenu: true, action: () => {
+      this.overlayManager.showConfirm({
+        title: t('confirm.restore.title'),
+        body: t('confirm.restore.body'),
+        yes: t('confirm.restore.yes'),
+        onYes: restore
+      });
     } };
   }
 
@@ -3551,7 +4068,7 @@ class InputHandler {
       this.renderer.hidePauseOverlay();
       this._refreshTimerDisplay();
       this.renderer.updateStatusBar('running');
-      this.audioManager.playMuffle();
+      this.audioManager.playResume();
     } else {
       this.engine.pause();
       if (this._dualMode && this._dualEngine) this._dualEngine.pause();
@@ -4709,7 +5226,7 @@ class DisplaySyncManager {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { formatTime, isValidSeconds, isNumeric, escapeHtml, generateRoundDurations, DEFAULT_CONFIG, APP_SETTINGS, applyConfigSettings, PHASES, prepBeepSecond, STORAGE_KEY, StorageManager, createTimerState, TimerEngine, AudioManager, ICONS, presetIcon, TRAINING_MODES, Renderer, ClassProgressRenderer, OverlayManager, InputHandler, ClassPresetManager, ScheduleManager, WeatherManager, HolidayThemeManager, HOLIDAY_THEMES, getActiveHoliday, VALID_DAYS, VALID_CLASS_TYPES, SCHEDULE_STORAGE_KEY, SYNCED_SCHEDULE_FILE, DISPLAY_MODES, DISPLAY_MODE_LABELS, DISPLAY_MODE_STORAGE_KEY, nextDisplayMode, DisplaySyncManager, SYNC_SECTION_IDS, SYNC_ATTR_IDS, buildSyncSnapshot, applySyncSnapshot, syncElementFromHtml, HOLD_MS, TRAINING_MENU_ITEMS, moveSelection, stepNumericBuffer };
+  module.exports = { formatTime, isValidSeconds, isNumeric, escapeHtml, generateRoundDurations, DEFAULT_CONFIG, APP_SETTINGS, applyConfigSettings, PHASES, prepBeepSecond, STORAGE_KEY, StorageManager, createTimerState, TimerEngine, AudioManager, ICONS, presetIcon, TRAINING_MODES, Renderer, ClassProgressRenderer, OverlayManager, InputHandler, ClassPresetManager, ScheduleManager, WeatherManager, HolidayThemeManager, HOLIDAY_THEMES, getActiveHoliday, VALID_DAYS, VALID_CLASS_TYPES, SCHEDULE_STORAGE_KEY, SYNCED_SCHEDULE_FILE, DISPLAY_MODES, DISPLAY_MODE_LABELS, DISPLAY_MODE_STORAGE_KEY, nextDisplayMode, DisplaySyncManager, SYNC_SECTION_IDS, SYNC_ATTR_IDS, buildSyncSnapshot, applySyncSnapshot, syncElementFromHtml, HOLD_MS, TRAINING_MENU_ITEMS, moveSelection, stepNumericBuffer, STRINGS, LANGUAGES, t, setLanguage, applyStaticTranslations, presetDisplayName, classDisplayName, CLASS_TITLES };
 }
 
 // --- Application Initialization ---
@@ -4723,6 +5240,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
    * derived from local time and config.json) runs locally.
    */
   function initSecondaryDisplay(urlParams) {
+    applyStaticTranslations();
     const renderer = new Renderer();
     const presetManager = new ClassPresetManager();
     const classProgress = new ClassProgressRenderer();
@@ -4768,6 +5286,8 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       const mode = DISPLAY_MODES.includes(meta.displayMode) ? meta.displayMode : 'mirror';
       DISPLAY_MODES.forEach(m => root.classList.remove('mode-' + m));
       root.classList.add('mode-' + mode);
+      root.classList.toggle('editing', meta.editing === true);
+      if (LANGUAGES.includes(meta.language) && meta.language !== APP_SETTINGS.language) setLanguage(meta.language);
 
       if (typeof meta.scheduleEnabled === 'boolean' && meta.scheduleEnabled !== APP_SETTINGS.scheduleEnabled) {
         APP_SETTINGS.scheduleEnabled = meta.scheduleEnabled;
@@ -4899,6 +5419,8 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
 
     // Set initial idle state for layout
     document.body.classList.add('timer-idle');
+    document.body.classList.toggle('quiet-visuals', APP_SETTINGS.quietVisuals);
+    applyStaticTranslations();
 
     // 4. Pending class type for deferred preset loading (Req 19.3, 19.4)
     let pendingClass = null;
@@ -4986,7 +5508,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         // Update status bar based on new phase (unless the user is mid-edit —
         // time-setting mode stays active across phase changes)
         if (_inputHandlerRef && _inputHandlerRef._timeSettingMode) {
-          renderer.updateStatusBar('editing');
+          _inputHandlerRef._updateTimeSettingBar();
         } else if (newPhase === PHASES.IDLE) {
           if (_inputHandlerRef && _inputHandlerRef._ready) {
             renderer.updateStatusBar('ready');
@@ -5001,6 +5523,8 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         if (newPhase === PHASES.IDLE && oldPhase === PHASES.ROUND && !state._cancelledByUser) {
           document.body.classList.remove('timer-idle');
           if (_inputHandlerRef) _inputHandlerRef._ready = true;
+          // Rounds ran out: say so, instead of looking like a restarted timer
+          if (!(_inputHandlerRef && _inputHandlerRef._timeSettingMode)) renderer.updateStatusBar('finished');
         } else {
           document.body.classList.toggle('timer-idle', newPhase === PHASES.IDLE && !state.paused);
         }
@@ -5096,7 +5620,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         if (!opts || !opts.silent) {
           const toast = document.getElementById('display-mode-toast');
           if (toast) {
-            toast.textContent = `Screens: ${DISPLAY_MODE_LABELS[displayMode]}`;
+            toast.textContent = t('screens.toast', { mode: t('screens.' + displayMode) });
             toast.classList.add('visible');
             clearTimeout(displayModeToastTimer);
             displayModeToastTimer = setTimeout(() => toast.classList.remove('visible'), 2000);
@@ -5104,6 +5628,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         }
       };
       inputHandler._displayModeCallback = () => setDisplayMode(nextDisplayMode(displayMode));
+      inputHandler._displayModeLabelCallback = () => t('screens.' + displayMode);
       inputHandler._onDualDeactivated = () => {
         if (displayMode === 'split') setDisplayMode('mirror');
       };
@@ -5116,7 +5641,11 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         phase: state.phase,
         phase2: inputHandler._dualState?.phase,
         scheduleEnabled: APP_SETTINGS.scheduleEnabled,
-        holidayThemeEnabled: APP_SETTINGS.holidayThemeEnabled
+        holidayThemeEnabled: APP_SETTINGS.holidayThemeEnabled,
+        language: APP_SETTINGS.language,
+        // The second TV shows the menus / editing highlight while they are up,
+        // even in Clock + Timer or Split mode, since it relays the remote
+        editing: overlayManager.isOpen() || inputHandler._timeSettingMode
       }));
     };
 
@@ -5228,6 +5757,22 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       renderer.updateScheduleDisplay(active, next, null);
       renderer.updateNextClassDisplay(active ? next : null);
       if (withProgress) classProgress.setActiveClass(active);
+    };
+
+    // Language switch: re-label everything currently on screen
+    overlayManager._onLanguageChange = () => {
+      applyStaticTranslations();
+      const c = renderer._lastCounter;
+      if (c) renderer.updateRoundCounter(c.current, c.total);
+      renderer.updatePresetLabel(renderer._lastPreset || null);
+      if (renderer._lastTemperature !== undefined) renderer.updateTemperature(renderer._lastTemperature);
+      const st = renderer._lastStatus;
+      if (st) renderer.updateStatusBar(st.mode, st.detail);
+      if (state.roundDurations) {
+        renderer.updateRoundList(state.roundDurations, state.currentRound, state._presetName, state.restDurations, state.config.restDurationSec, renderer.getRemainingClassSec(), state.remainingSec, state.phase);
+      }
+      refreshScheduleUI(false);
+      if (!APP_SETTINGS.scheduleEnabled) renderer.updateScheduleDisplay(null, null, null);
     };
 
     overlayManager._onScheduleToggle = (enabled) => {

@@ -31,15 +31,45 @@ keystroke, so a keyboard works the same way and no driver is needed on the Pi.
 | Ring ▲▼ | enter editing and adjust the value; move the highlight in menus | adjust by ×5 |
 | Ring ◀▶ | next / previous field in editing | — |
 
-While idle the main menu lists Training, Competition, Schedule, Screens (dual
-mode only), Blank screen, Holiday theme and Weekly schedule (OK toggles ON/OFF
-in place), Update app (asks for confirmation, highlight starts on No) and About.
-While a timer runs it is just Pause/Resume, Reset timer and Blank screen; each
-closes the menu. Whenever the app is not in its default state (a timer running
-or paused, the ready state, a preset or custom settings selected, dual timer
-on) a **Reset** row is added as the first option: it stops everything, clears
-the selection and returns to the defaults (or the active class preset). Training value prompts step with the ring
-and confirm with OK; typing digits still works from a keyboard.
+While idle the main menu is ordered by how often each row is used: Training,
+Competition, Restore defaults (only when the app is not in its default state:
+the ready state, a preset or custom settings selected, dual timer on; it
+clears the selection and returns to the defaults or the active class preset),
+View schedule (◀▶ picks the day shown large; opens on today), Screens (dual
+mode only; the row shows the current mode and OK cycles it), Hide display (the
+rest timer stays visible), Follow class schedule, Holiday theme and Quiet
+visuals (OK toggles ON/OFF in place), Language (English, default, or
+Português; every label, prompt, state text and menu row switches, preset names
+included; known class titles
+switch; an unrecognised class title shows as written in the calendar), Maintenance
+(Install update and restart, which asks first with the highlight on No, and
+Sync class schedule) and About. While a timer runs the menu is Pause/Resume
+first, then Stop and keep settings, Restore defaults (asks first) and Hide
+display; each closes the menu.
+
+A state label under the timers names the states that look alike from the mat:
+**Ready**, **Paused** (with a distinct resume sound), **Finished** when the
+rounds run out, and **Editing <field>** with the one control line that applies
+(◀▶ field · ▲▼ adjust · ▶ start · Menu cancel; while a timer runs, ▲▼ stops it
+and restarts fresh). Running and idle show no label. The final ten seconds turn
+the counting box yellow with black digits, and during rest the rest box takes
+the large slot.
+
+Training and Chainsaw prompts show "Step n of m"; Menu goes back one step and
+keeps the value already entered, ▲▼ change the value, OK accepts. A suggested
+value is shown at full contrast with a "suggested · OK accepts" caption; the
+min:sec picker labels its minutes and seconds fields. Typing digits still
+works from a keyboard.
+
+Quiet visuals (menu toggle) replaces the full-screen white flash with an edge
+flash, stops the countdown dimming and shows a steady outline instead of
+blinking digits while editing. Holiday decorations appear only on the idle
+clock screen.
+
+In dual mode both panels use the same colours (round green, rest red, white
+outline on the counting box) and are named Timer 1 / Timer 2. The second TV
+shows menus and the editing highlight whenever they are up on the primary,
+even in Clock + Timer or Split mode, since the remote can face either screen.
 
 Program Flirc with these keys (Flirc GUI → full keyboard; holds via the CLI):
 
@@ -64,7 +94,7 @@ bindings (`Enter`, `0`, `+`/`-`, `*`, `/`, `9`, `7`, `.`) remain as shortcuts.
 
 # Schedule sync
 
-`sync-schedule.js` (also reachable from About: press ▶ Right twice, or `*` `*`, then pick "Sync class schedule")
+`sync-schedule.js` (also reachable from the main menu: Maintenance → Sync class schedule, or from About with ▶ Right twice)
 pulls the live class list from Gymdesk and writes it to `schedule.json`. That
 file is git-ignored and, when present, replaces the `schedule` array bundled in
 `config.json` at load time, so syncing never dirties the working tree and

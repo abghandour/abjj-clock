@@ -33,8 +33,8 @@ function setSchedule(enabled) {
   }
   press('Escape');
   const selected = () => document.querySelector('#overlay .mg-name.mg-sel')?.textContent;
-  for (let i = 0; i < 12 && selected() !== 'Weekly schedule'; i++) press('ArrowDown');
-  if (selected() !== 'Weekly schedule') throw new Error('Weekly schedule row not found in the main menu');
+  for (let i = 0; i < 12 && selected() !== 'Follow class schedule'; i++) press('ArrowDown');
+  if (selected() !== 'Follow class schedule') throw new Error('Follow class schedule row not found in the main menu');
   press('Enter');
   press('Escape');
   if (app.APP_SETTINGS.scheduleEnabled !== enabled) throw new Error('schedule toggle did not apply');
@@ -114,7 +114,7 @@ describe('app boot', () => {
     // Schedule loaded: next class is shown and the weather was polled
     expect(document.getElementById('schedule-display').textContent).toContain('Next:');
     expect(fetchMock.mock.calls.some(c => String(c[0]).startsWith('https://api.open-meteo.com'))).toBe(true);
-    expect(document.getElementById('temperature').textContent).toBe('72°F');
+    expect(document.getElementById('temperature').textContent).toBe('Outside 72°F');
 
     // Enter → ready, Enter → running, ticking on the wall clock
     press('Enter');

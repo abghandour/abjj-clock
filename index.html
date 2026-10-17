@@ -228,17 +228,6 @@
       animation: blink-bw 1.4s step-end infinite;
     }
 
-    /* Key badges used in instruction bars and overlays */
-    .key-badge {
-      display: inline-block;
-      background: rgba(255,255,255,0.15);
-      border: 1px solid rgba(255,255,255,0.3);
-      border-radius: 0.3em;
-      padding: 0.1em 0.5em;
-      font-weight: 600;
-      margin: 0 0.2em;
-    }
-
     /* Time-setting instruction bar */
     #edit-instruction-bar {
       position: fixed;
@@ -256,17 +245,6 @@
 
     #edit-instruction-bar.active {
       display: block;
-    }
-
-    #edit-instruction-bar .edit-hint {
-      font-size: 0.6em;
-      color: var(--text-muted);
-      margin-top: 0.5em;
-    }
-
-    #edit-instruction-bar .edit-error {
-      color: var(--accent-red);
-      margin-top: 0.5em;
     }
 
     /* Holiday decorations layer (subtle, non-interactive, below all overlays) */
@@ -340,14 +318,44 @@
     }
 
     /* Active timer border — white when running */
-    #round-timer.timer-active {
+    #round-timer.timer-active,
+    #round-timer-2.timer-active {
       border-color: #ffffff;
       color: #ffffff !important;
     }
 
-    #rest-timer.timer-active {
+    #rest-timer.timer-active,
+    #rest-timer-2.timer-active {
       border-color: #ffffff;
       color: #ffffff !important;
+    }
+
+    /* Final ten seconds: yellow box, black digits and border (white on yellow
+       is ~1.7:1; black on yellow is ~13:1) */
+    #round-timer.timer-active.timer-warn,
+    #rest-timer.timer-active.timer-warn {
+      background: var(--accent-yellow);
+      border-color: #000000;
+      color: #000000 !important;
+    }
+
+    #round-timer.timer-warn .ts-minutes, #round-timer.timer-warn .ts-seconds,
+    #rest-timer.timer-warn .ts-minutes, #rest-timer.timer-warn .ts-seconds {
+      border-color: var(--accent-yellow);
+    }
+
+    /* During rest the rest box takes the big slot and the round box the small
+       one, so the number that is counting is always the large one */
+    #round-timer, #rest-timer {
+      transition: font-size 0.3s ease-in-out;
+    }
+
+    #dual-timer-container.rest-active:not(.dual-mode) #rest-timer {
+      font-size: clamp(4rem, 18vw, 20rem);
+    }
+
+    #dual-timer-container.rest-active:not(.dual-mode) #round-timer {
+      font-size: clamp(2.5rem, 10vw, 12rem);
     }
 
     /* Round counter */
@@ -463,49 +471,75 @@
       display: block;
     }
 
-    /* Status bar - bottom right */
+    #class-progress-label {
+      display: none;
+      font-size: clamp(0.7rem, 1.3vw, 1.5rem);
+      color: var(--text-muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    #class-progress.active + #class-progress-label {
+      display: block;
+    }
+
+    #temperature {
+      font-size: clamp(0.8rem, 1.6vw, 1.8rem);
+      color: var(--text-muted);
+    }
+
+    /* State label, bottom-right corner: Ready / Paused / Finished / Editing.
+       Fixed so it never shifts the timer layout; empty while running or idle.
+       Travels to the second TV as a synced section. */
     #status-bar {
-      position: absolute;
+      display: none;
+      position: fixed;
       bottom: 2vh;
       right: 2vh;
-      display: none; /* key hints removed; element kept for display sync */
       flex-direction: column;
       align-items: flex-end;
-      gap: 0.3em;
-      font-size: clamp(0.5rem, 1vw, 1rem);
-      color: var(--text-help);
-      background: rgba(255,255,255,0.05);
-      padding: 0.5em 1em;
-      border-radius: 0.5em;
-      transition: opacity 0.3s ease;
-      z-index: 200;
-    }
-
-    #status-bar .sb-row {
-      display: flex;
-      align-items: center;
-      gap: 0.4em;
-    }
-
-    #status-bar .sb-key {
-      display: inline-block;
-      background: rgba(255,255,255,0.12);
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 0.25em;
-      padding: 0.1em 0;
-      font-weight: 700;
-      color: var(--text-label);
-      font-size: 0.9em;
-      min-width: 4em;
-      padding: 0.1em 0.4em;
-      box-sizing: border-box;
-      text-align: center;
-      letter-spacing: 0.1em;
+      gap: 0.2em;
+      text-align: right;
       white-space: nowrap;
+      z-index: 60;
     }
 
-    #status-bar .sb-label {
-      color: var(--text-muted);
+    #status-bar.active {
+      display: flex;
+    }
+
+    #status-bar .sb-state {
+      font-size: clamp(1.2rem, 3.2vw, 3.6rem);
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-primary);
+      padding: 0.1em 0.8em;
+      border-radius: 0.3em;
+    }
+
+    #status-bar .sb-ready { background: rgba(0, 204, 68, 0.25); color: #d6ffe1; }
+    #status-bar .sb-paused { background: rgba(255, 255, 255, 0.18); color: #ffffff; }
+    #status-bar .sb-finished { background: rgba(209, 206, 24, 0.3); color: #fff9b0; }
+    /* Editing: smaller and allowed to wrap so it stays clear of the timer
+       (above the editing layer, which lifts the timer area) */
+    #status-bar .sb-editing {
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      text-transform: none;
+      letter-spacing: 0.05em;
+      font-size: clamp(1rem, 2.2vw, 2.4rem);
+    }
+
+    #status-bar:has(.sb-editing) {
+      z-index: 1000;
+      white-space: normal;
+      max-width: 30vw;
+    }
+
+    #status-bar .sb-hint {
+      font-size: clamp(0.8rem, 1.7vw, 2rem);
+      color: var(--text-label);
     }
 
     /* Customization overlay */
@@ -552,9 +586,18 @@
       text-align: center;
     }
 
+    /* Suggested value shown when nothing has been typed: full contrast, in
+       the label colour so it reads as a real value, with a caption below */
     #overlay .overlay-input-dim {
+      color: var(--text-label);
+    }
+
+    #overlay .overlay-default-note {
+      font-size: clamp(0.8rem, 1.5vw, 1.6rem);
       color: var(--text-muted);
-      opacity: 0.6;
+      text-align: center;
+      margin-top: 0.5vh;
+      letter-spacing: 0.05em;
     }
 
     #overlay .overlay-error {
@@ -579,6 +622,49 @@
       color: var(--text-primary);
       margin-bottom: 1vh;
       white-space: nowrap;
+      display: flex;
+      align-items: baseline;
+      gap: 0.6em;
+    }
+
+    #overlay .overlay-wizard-step {
+      font-size: 0.4em;
+      color: var(--text-muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    #overlay .overlay-wizard-nav {
+      margin-top: auto;
+      font-size: clamp(0.8rem, 1.5vw, 1.6rem);
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    #overlay .overlay-wizard-body {
+      flex-direction: column;
+    }
+
+    #overlay .overlay-duration-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #overlay .overlay-duration-labels {
+      display: flex;
+      justify-content: space-around;
+      width: 100%;
+      margin-top: 0.6vh;
+      font-size: clamp(0.8rem, 1.5vw, 1.6rem);
+      color: var(--text-muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    #overlay .overlay-duration-labels .dur-label-sel {
+      color: var(--text-primary);
+      font-weight: 700;
     }
 
     #overlay .overlay-wizard .overlay-prompt {
@@ -641,13 +727,6 @@
       animation: blink-bw 1.4s step-end infinite;
     }
 
-    #overlay .overlay-hint {
-      font-size: clamp(0.8rem, 1.5vw, 1.5rem);
-      color: var(--text-muted);
-      margin-top: 2vh;
-      text-align: center;
-    }
-
     #overlay .advanced-menu {
       text-align: left;
     }
@@ -657,6 +736,14 @@
       color: var(--text-primary);
       margin-bottom: 2vh;
       text-align: center;
+    }
+
+    #overlay .advanced-menu .menu-body {
+      font-size: clamp(0.9rem, 1.8vw, 1.8rem);
+      color: var(--text-muted);
+      margin-bottom: 3vh;
+      text-align: center;
+      max-width: 60vw;
     }
 
     #overlay .advanced-menu .menu-grid {
@@ -705,12 +792,15 @@
       align-items: center;
     }
 
+    /* Selected row: brighter wash plus a solid green leading bar that still
+       reads under glare */
     #overlay .advanced-menu .mg-sel {
-      background: rgba(255, 255, 255, 0.14);
+      background: rgba(255, 255, 255, 0.2);
     }
 
     #overlay .advanced-menu .mg-first.mg-sel {
       border-radius: 0.3em 0 0 0.3em;
+      box-shadow: inset 0.3em 0 0 var(--accent-green);
     }
 
     #overlay .advanced-menu .mg-last.mg-sel {
@@ -723,18 +813,6 @@
 
     #overlay .advanced-menu .mg-name.mg-sel {
       color: var(--text-primary);
-    }
-
-    #overlay .advanced-menu .menu-close {
-      font-size: clamp(1rem, 2.5vw, 2.5rem);
-      color: var(--text-label);
-      margin-top: 2vh;
-      text-align: center;
-    }
-
-    #overlay .advanced-menu .menu-close .menu-key {
-      color: var(--accent-green);
-      font-weight: 700;
     }
 
     /* Screen flash effect */
@@ -781,7 +859,7 @@
     #round-list {
       display: none;
       font-family: sans-serif;
-      font-size: clamp(0.6rem, 1.2vw, 1.2rem);
+      font-size: clamp(0.75rem, 1.5vw, 1.6rem);
       color: var(--text-label);
       line-height: 1.8;
       max-height: 40vh;
@@ -799,6 +877,26 @@
     #round-list .round-item {
       white-space: nowrap;
       padding: 0.1em 0.4em;
+    }
+
+    #round-list .round-now {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 0.4em;
+      padding-bottom: 0.3em;
+      border-bottom: 1px solid rgba(255,255,255,0.2);
+      line-height: 1.3;
+    }
+
+    #round-list .round-now-cur {
+      font-size: 1.6em;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    #round-list .round-now-next {
+      font-size: 1.1em;
+      color: var(--text-label);
     }
 
     #round-list .round-item.past {
@@ -833,7 +931,7 @@
     }
 
     #next-class-display {
-      font-size: clamp(0.6rem, 1.2vw, 1.2rem);
+      font-size: clamp(0.75rem, 1.5vw, 1.6rem);
       color: var(--text-muted);
       line-height: 1.6;
     }
@@ -875,6 +973,18 @@
 
     .sched-day {
       text-align: center;
+      padding: 0 0.3vw 0.5vh;
+      border-radius: 0.4em;
+    }
+
+    .sched-day.sched-today .sched-day-name {
+      color: var(--text-primary);
+      border-bottom-color: var(--accent-green);
+    }
+
+    .sched-day.sched-sel {
+      background: rgba(255, 255, 255, 0.12);
+      box-shadow: inset 0 0.3em 0 var(--accent-green);
     }
 
     .sched-day-name {
@@ -895,25 +1005,80 @@
     }
 
     .sched-time {
-      font-size: clamp(0.55rem, 1.1vw, 1.1rem);
+      font-size: clamp(0.7rem, 1.3vw, 1.5rem);
       color: var(--text-muted);
     }
 
     .sched-title {
-      font-size: clamp(0.6rem, 1.2vw, 1.2rem);
+      font-size: clamp(0.8rem, 1.5vw, 1.7rem);
       color: var(--text-label);
       font-weight: 600;
     }
 
     .sched-empty {
       color: var(--text-muted);
-      font-size: clamp(0.6rem, 1.2vw, 1.2rem);
+      font-size: clamp(0.8rem, 1.5vw, 1.7rem);
     }
 
-    .schedule-hint {
-      font-size: clamp(0.7rem, 1.3vw, 1.3rem);
-      color: var(--text-muted);
+    /* Times in the schedule and class panels keep their AM/PM (the wall
+       clock alone hides it) */
+    .schedule-overlay .clock-ampm,
+    #schedule-display .clock-ampm,
+    #next-class-display .clock-ampm {
+      display: inline;
+      font-size: 0.75em;
+      margin-left: 0.1em;
+    }
+
+    /* Selected day in large type under the grid (◀▶ moves it) */
+    /* Selected day in large type under the grid (◀▶ moves it): a two-column
+       table, times right-aligned against a shared gutter, titles left-aligned */
+    .sched-detail {
       margin-top: 2vh;
+      padding-top: 1.5vh;
+      border-top: 1px solid rgba(255,255,255,0.2);
+      display: grid;
+      grid-template-columns: max-content max-content;
+      justify-content: center;
+      column-gap: 2vw;
+      row-gap: 0.2vh;
+      align-items: baseline;
+    }
+
+    .sched-detail-day {
+      grid-column: 1 / -1;
+      text-align: center;
+      font-size: clamp(1.2rem, 2.6vw, 2.8rem);
+      color: var(--accent-green);
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 0.5vh;
+    }
+
+    .sched-detail-row {
+      display: contents;
+      font-size: clamp(1rem, 2.1vw, 2.3rem);
+    }
+
+    .sched-detail-none {
+      display: block;
+      grid-column: 1 / -1;
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    .sched-detail-time {
+      text-align: right;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .sched-detail-title {
+      text-align: left;
+      color: var(--text-primary);
+      font-weight: 600;
     }
 
     /* Dual timer layout */
@@ -946,9 +1111,28 @@
     #round-section-2 { text-align: center; }
     #rest-section-2 { text-align: center; margin-top: 1vh; }
 
+    /* Panel names show only in dual mode so coaches can tell the timers apart
+       without relying on colour */
+    .timer-panel-name {
+      display: none;
+      font-size: clamp(1rem, 2.2vw, 2.6rem);
+      color: var(--text-clock);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 0.5vh;
+    }
+
+    #dual-timer-container.dual-mode .timer-panel-name {
+      display: block;
+    }
+
+    #timer-panel-2 .timer-panel-name {
+      color: #5995f0;
+    }
+
     .round-label-2 {
       font-size: clamp(0.9rem, 2vw, 2.5rem);
-      color: #5995f0;
+      color: var(--text-round);
       text-transform: uppercase;
       letter-spacing: 0.3em;
       margin-bottom: 0.5vh;
@@ -956,7 +1140,7 @@
 
     .rest-label-2 {
       font-size: clamp(0.9rem, 2vw, 2.5rem);
-      color: #cc3333;
+      color: var(--text-rest);
       text-transform: uppercase;
       letter-spacing: 0.3em;
       margin-bottom: 1vh;
@@ -969,10 +1153,10 @@
       color: #000000;
       line-height: 1;
       font-variant-numeric: tabular-nums;
-      background: #5995f0;
+      background: var(--text-round);
       border-radius: 0.5rem;
       padding: 2vh 1.5vw;
-      border: 15px solid #5995f0;
+      border: 15px solid var(--text-round);
     }
 
     #rest-timer-2 {
@@ -982,17 +1166,10 @@
       color: #000000;
       line-height: 1;
       font-variant-numeric: tabular-nums;
-      background: #5995f0;
+      background: var(--text-rest);
       border-radius: 0.5rem;
       padding: 2vh 1.5vw;
-      border: 15px solid #5995f0;
-    }
-
-    /* Active/paused borders and font for timer 2 */
-    #round-timer-2.timer-active,
-    #rest-timer-2.timer-active {
-      border-color: #ffffff;
-      color: #ffffff !important;
+      border: 15px solid var(--text-rest);
     }
 
     /* Dual mode font scaling */
@@ -1006,43 +1183,16 @@
       font-size: clamp(1.5rem, 5vw, 6rem);
     }
 
-    #dual-timer-container.dual-mode #rest-timer {
-      background: var(--text-round);
-      border-color: var(--text-round);
-    }
-
-    #dual-timer-container.dual-mode #rest-section .ts-minutes,
-    #dual-timer-container.dual-mode #rest-section .ts-seconds {
-      border-color: var(--text-round);
-    }
-
-    #dual-timer-container.dual-mode #rest-timer-2 {
-      background: #5995f0;
-      border-color: #5995f0;
-    }
-
-    #dual-timer-container.dual-mode #rest-section-2 .ts-minutes,
-    #dual-timer-container.dual-mode #rest-section-2 .ts-seconds {
-      border-color: #5995f0;
-    }
-
-    #dual-timer-container.dual-mode #rest-label {
-      color: var(--text-round);
-    }
-
-    #dual-timer-container.dual-mode .rest-label-2 {
-      color: #5995f0;
-    }
-
-    /* Timer 2 digit span borders */
+    /* Phase colours are the same in every mode: round green, rest red, the
+       counting box outlined white. The panel name tells the timers apart. */
     #round-section-2 .ts-minutes,
     #round-section-2 .ts-seconds {
-      border-color: #5995f0;
+      border-color: var(--text-round);
     }
 
     #rest-section-2 .ts-minutes,
     #rest-section-2 .ts-seconds {
-      border-color: #5995f0;
+      border-color: var(--text-rest);
     }
 
     /* Time-setting for timer 2 */
@@ -1054,15 +1204,7 @@
       animation: blink-bw 1.4s step-end infinite;
     }
 
-    /* Time-setting border must override dual-mode rest border colors */
-    #dual-timer-container.dual-mode #rest-section .time-setting-minutes .ts-minutes,
-    #dual-timer-container.dual-mode #rest-section .time-setting-seconds .ts-seconds,
-    #dual-timer-container.dual-mode #rest-section-2 .time-setting-minutes .ts-minutes,
-    #dual-timer-container.dual-mode #rest-section-2 .time-setting-seconds .ts-seconds {
-      border-color: #000000;
-    }
-
-    /* Paused state — grayscale filter */
+    /* Paused state — grayscale filter (the Paused label names it) */
     #dual-timer-container.timer-paused-grayscale {
       filter: grayscale(1);
       transition: filter 0.3s ease;
@@ -1107,15 +1249,28 @@
       opacity: 1;
     }
 
-    /* Clock + Timer: screen 2 becomes a dedicated clock/schedule display */
-    html.screen2.mode-clocktimer #timer-area,
+    /* Clock + Timer: screen 2 becomes a dedicated clock/schedule display.
+       While a menu or editing is up on the primary (html.editing, relayed in
+       the snapshot meta) the second TV shows it too, since the remote can be
+       pointed at either screen. */
     html.screen2.mode-clocktimer #round-list,
-    html.screen2.mode-clocktimer #status-bar,
-    html.screen2.mode-clocktimer #edit-instruction-bar,
-    html.screen2.mode-clocktimer #overlay,
     html.screen2.mode-clocktimer #prep-overlay,
-    html.screen2.mode-clocktimer #screen-flash {
+    html.screen2.mode-clocktimer #screen-flash,
+    html.screen2.mode-clocktimer:not(.editing) #timer-area,
+    html.screen2.mode-clocktimer:not(.editing) #status-bar,
+    html.screen2.mode-clocktimer:not(.editing) #edit-instruction-bar,
+    html.screen2.mode-clocktimer:not(.editing) #overlay {
       display: none !important;
+    }
+
+    html.screen2.mode-clocktimer.editing #timer-area {
+      position: fixed;
+      bottom: 3vh;
+      left: 0;
+      right: 0;
+      transform: scale(0.54);
+      transform-origin: bottom center;
+      z-index: 30;
     }
 
     html.screen2.mode-clocktimer #top-center-bar {
@@ -1126,11 +1281,31 @@
       font-size: clamp(5rem, 22vw, 26rem);
     }
 
-    /* Split Timers: each screen shows one dual-mode timer panel fullscreen */
-    html.mode-split.screen1 #timer-panel-2,
-    html.mode-split.screen2 #timer-panel-1,
-    html.mode-split.screen2 #status-bar {
+    /* Split Timers: each screen shows one dual-mode timer panel fullscreen.
+       While editing, both panels show on both screens so the highlighted
+       field is always visible wherever the coach is looking. */
+    html.mode-split.screen1:not(.editing) #timer-panel-2,
+    html.mode-split.screen2:not(.editing) #timer-panel-1 {
       display: none !important;
+    }
+
+    html.mode-split.editing #dual-timer-container.dual-mode {
+      gap: 6vw;
+    }
+
+    html.mode-split.editing #dual-timer-container.dual-mode .timer-panel {
+      flex: 1;
+      max-width: 50%;
+    }
+
+    html.mode-split.editing #dual-timer-container.dual-mode #round-timer,
+    html.mode-split.editing #dual-timer-container.dual-mode #round-timer-2 {
+      font-size: clamp(2rem, 9vw, 10rem);
+    }
+
+    html.mode-split.editing #dual-timer-container.dual-mode #rest-timer,
+    html.mode-split.editing #dual-timer-container.dual-mode #rest-timer-2 {
+      font-size: clamp(1.5rem, 5vw, 6rem);
     }
 
     html.mode-split #dual-timer-container.dual-mode {
@@ -1158,6 +1333,44 @@
       transform: scale(0.54);
     }
 
+    /* Holiday decorations only on the idle clock screen; a running timer
+       stays clean */
+    body:not(.timer-idle) #holiday-layer {
+      display: none;
+    }
+
+    /* Quiet visuals (menu toggle): edge flash instead of a full white screen,
+       steady outline instead of blinking digits, no countdown dimming */
+    body.quiet-visuals #screen-flash.active {
+      background: transparent;
+      box-shadow: inset 0 0 0 2.5vw #ffffff;
+      animation: screen-flash 0.4s ease-out forwards;
+    }
+
+    body.quiet-visuals .flashing {
+      animation: none;
+    }
+
+    body.quiet-visuals #round-section .time-setting-minutes .ts-minutes,
+    body.quiet-visuals #round-section .time-setting-seconds .ts-seconds,
+    body.quiet-visuals #rest-section .time-setting-minutes .ts-minutes,
+    body.quiet-visuals #rest-section .time-setting-seconds .ts-seconds,
+    body.quiet-visuals #round-section-2 .time-setting-minutes .ts-minutes,
+    body.quiet-visuals #round-section-2 .time-setting-seconds .ts-seconds,
+    body.quiet-visuals #rest-section-2 .time-setting-minutes .ts-minutes,
+    body.quiet-visuals #rest-section-2 .time-setting-seconds .ts-seconds,
+    body.quiet-visuals #overlay .overlay-duration.time-setting-minutes .ts-minutes,
+    body.quiet-visuals #overlay .overlay-duration.time-setting-seconds .ts-seconds {
+      animation: none;
+      border-color: #ffffff;
+      color: #ffffff;
+    }
+
+    body.quiet-visuals #round-counter.time-setting-active {
+      animation: none;
+      border-color: #ffffff;
+    }
+
     /* Stealth mode hint */
     #stealth-hint {
       display: none;
@@ -1173,12 +1386,13 @@
   </style>
 </head>
 <body>
-  <div id="sync-status" role="status" hidden>Primary display disconnected — timer may be out of date</div>
+  <div id="sync-status" role="status" hidden>Primary display disconnected. Timer may be out of date</div>
 
   <!-- Top right bar -->
   <div id="top-right-bar">
     <span id="day-of-week"></span>
     <canvas id="class-progress" width="250" height="250"></canvas>
+    <span id="class-progress-label">Class time left</span>
     <span id="temperature" style="display:none;"></span>
   </div>
 
@@ -1187,6 +1401,7 @@
     <div id="dual-timer-container">
       <!-- Timer 1 (primary) -->
       <div id="timer-panel-1" class="timer-panel">
+        <div class="timer-panel-name">Timer 1</div>
         <div id="round-section">
           <div id="round-label-row">
             <div id="preset-label"></div>
@@ -1203,6 +1418,7 @@
 
       <!-- Timer 2 (dual mode only) -->
       <div id="timer-panel-2" class="timer-panel" style="display:none;">
+        <div class="timer-panel-name">Timer 2</div>
         <div id="round-section-2">
           <div class="round-label-2">Round</div>
           <div id="round-timer-2"><span class="ts-minutes">05</span>:<span class="ts-seconds">00</span></div>
@@ -1235,7 +1451,7 @@
     <span id="clock">00:00:00</span>
   </div>
 
-  <!-- Status bar - bottom right -->
+  <!-- State label, bottom right: Ready / Paused / Finished / Editing (empty while running or idle) -->
   <div id="status-bar"></div>
 
   <!-- Time-setting mode instruction bar -->

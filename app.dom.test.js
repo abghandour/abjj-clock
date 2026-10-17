@@ -34,6 +34,7 @@ const {
   nextDisplayMode,
   DISPLAY_MODES,
   DisplaySyncManager,
+  STRINGS, LANGUAGES, t, setLanguage, applyStaticTranslations, presetDisplayName, classDisplayName,
   SYNC_SECTION_IDS,
   SYNC_ATTR_IDS,
   buildSyncSnapshot,
@@ -59,7 +60,7 @@ function fakeAudio() {
   const names = [
     '_ensureContext', 'playCountdownBeep', 'playPrepBeep', 'playRoundStartFanfare',
     'playEndOfRoundBeep', 'playEndOfRestBeep', 'playEndOfRoundBeepT2', 'playEndOfRestBeepT2',
-    'playCountdownBeepT2', 'playEndOfClassRing', 'playStartOfClassRing', 'playMuffle', 'playCancel'
+    'playCountdownBeepT2', 'playEndOfClassRing', 'playStartOfClassRing', 'playMuffle', 'playResume', 'playCancel'
   ];
   const audio = {};
   for (const n of names) audio[n] = vi.fn();
@@ -322,15 +323,22 @@ describe('Renderer', () => {
     expect(el.textContent).toBe('01:01');
   });
 
-  it('highlights the last ten seconds of an active round only', () => {
+  it('marks the last ten seconds of an active round or rest with the warn class only', () => {
     renderer.updateRoundDisplay(10, true);
     const el = document.getElementById('round-timer');
-    expect(el.style.backgroundColor).toBe('var(--accent-yellow)');
-    expect(el.querySelector('.ts-minutes').style.borderColor).toBe('var(--accent-yellow)');
+    expect(el.classList.contains('timer-warn')).toBe(true);
     renderer.updateRoundDisplay(10, false);
-    expect(el.style.backgroundColor).toBe('');
+    expect(el.classList.contains('timer-warn')).toBe(false);
     renderer.updateRoundDisplay(11, true);
-    expect(el.style.backgroundColor).toBe('');
+    expect(el.classList.contains('timer-warn')).toBe(false);
+    const rest = document.getElementById('rest-timer');
+    const container = document.getElementById('dual-timer-container');
+    renderer.updateRestDisplay(8, true);
+    expect(rest.classList.contains('timer-warn')).toBe(true);
+    expect(container.classList.contains('rest-active')).toBe(true); // rest takes the big slot
+    renderer.updateRestDisplay(30, false);
+    expect(rest.classList.contains('timer-warn')).toBe(false);
+    expect(container.classList.contains('rest-active')).toBe(false);
   });
 
   it('formats the wall clock as 12-hour time with seconds and AM/PM', () => {
@@ -440,12 +448,34 @@ describe('Renderer', () => {
     vi.useRealTimers();
   });
 
-  it('status bar stays empty in every mode (corner hints removed)', () => {
+  it('state label names Ready / Paused / Finished / Editing and is empty while running or idle', () => {
     const bar = document.getElementById('status-bar');
-    for (const mode of ['clock', 'ready', 'running', 'paused', 'editing', 'menu', 'hidden']) {
-      renderer.updateStatusBar(mode);
-      expect(bar.innerHTML).toBe('');
-    }
+    renderer.updateStatusBar('ready');
+    expect(bar.textContent).toContain('Ready');
+    expect(bar.classList.contains('active')).toBe(true);
+    renderer.updateStatusBar('menu'); // overlays leave the label alone
+    expect(bar.textContent).toContain('Ready');
+    renderer.updateStatusBar('running');
+    expect(bar.innerHTML).toBe('');
+    expect(bar.classList.contains('active')).toBe(false);
+    renderer.updateStatusBar('paused');
+    expect(bar.textContent).toContain('Paused');
+    renderer.updateStatusBar('finished');
+    expect(bar.textContent).toContain('Finished');
+    renderer.updateStatusBar('editing', { field: 'rest seconds', running: false });
+    expect(bar.textContent).toContain('Editing rest seconds');
+    expect(bar.textContent).toContain('▶ start');
+    renderer.updateStatusBar('editing', { field: 'rounds', running: true });
+    expect(bar.textContent).toContain('edit & restart');
+    renderer.updateStatusBar('clock');
+    expect(bar.innerHTML).toBe('');
+  });
+
+  it('labels the outside temperature', () => {
+    renderer.updateTemperature('72°F');
+    expect(document.getElementById('temperature').textContent).toBe('Outside 72°F');
+    renderer.updateTemperature('');
+    expect(document.getElementById('temperature').style.display).toBe('none');
   });
 
   it('stealth hides everything except the rest section during REST', () => {
@@ -463,6 +493,69 @@ describe('Renderer', () => {
 });
 
 // ─── ClassProgressRenderer ───
+
+describe('language', () => {
+  beforeEach(() => { loadDom(); localStorage.clear(); });
+  afterEach(() => setLanguage('en'));
+
+  it('every English key has a Portuguese translation and t() falls back to English', () => {
+    for (const key of Object.keys(STRINGS.en)) expect(STRINGS.pt[key], key).toBeDefined();
+    expect(LANGUAGES).toEqual(['en', 'pt']);
+    expect(t('label.rounds', { n: 3 })).toBe('3 rounds');
+    expect(t('nope.key')).toBe('nope.key');
+    setLanguage('pt');
+    expect(t('label.rest')).toBe('Descanso');
+    expect(localStorage.getItem('bjj-timer-language')).toBe('pt');
+    expect(document.documentElement.lang).toBe('pt-BR');
+    expect(presetDisplayName('Ladder Up')).toBe('Escada crescente');
+    expect(presetDisplayName('Blue Belt')).toBe('Faixa Azul');
+    expect(presetDisplayName('Open Mat')).toBe('Tatame livre'); // class titles used as preset names
+    expect(presetDisplayName('Some Seminar')).toBe('Some Seminar'); // unknown names stay as stored
+    expect(classDisplayName('Marathon Roll- Adults')).toBe('Maratona de rola (adultos)'); // spacing/punctuation ignored
+    expect(classDisplayName('MARATHON ROLL - ADULTS')).toBe('Maratona de rola (adultos)');
+    expect(classDisplayName('Yoga')).toBe('Yoga');
+    expect(setLanguage('xx')).toBe('en');
+  });
+
+  it('relabels the static markup and the renderer output in Portuguese', () => {
+    const renderer = new Renderer();
+    setLanguage('pt');
+    expect(document.getElementById('rest-label').textContent).toBe('Descanso');
+    expect(document.querySelector('#timer-panel-2 .timer-panel-name').textContent).toBe('Cronômetro 2');
+    expect(document.getElementById('stealth-hint').textContent).toContain('Pressione');
+    renderer.updateStatusBar('paused');
+    expect(document.getElementById('status-bar').textContent).toContain('Pausado');
+    renderer.updateRoundCounter(2, 5);
+    expect(document.getElementById('round-counter').textContent).toBe('Rodada 2 / 5');
+    renderer.updateRoundCounter(0, 0);
+    expect(document.getElementById('round-counter').textContent).toContain('Repetir');
+    renderer.updatePresetLabel(null);
+    expect(document.getElementById('preset-label').textContent).toContain('Personalizado');
+    renderer.updateTemperature('20°C');
+    expect(document.getElementById('temperature').textContent).toBe('Lá fora 20°C');
+    renderer.updateRoundList([300, 240], 1, 'Ladder Down', null, 30, 0, 100, PHASES.ROUND);
+    expect(document.getElementById('round-list').textContent).toContain('Agora R1');
+    expect(document.getElementById('round-list').textContent).toContain('Escada decrescente');
+    setLanguage('en');
+    expect(document.getElementById('rest-label').textContent).toBe('Rest');
+  });
+});
+
+describe('round list emphasis', () => {
+  beforeEach(() => loadDom());
+
+  it('shows the current and next round large above the full list', () => {
+    const renderer = new Renderer();
+    renderer.updateRoundList([300, 240, 180], 2, 'Ladder Down', null, 30, 0, 100, PHASES.ROUND);
+    const list = document.getElementById('round-list');
+    expect(list.querySelector('.round-now-cur').textContent).toBe('Now R2 · 04:00');
+    expect(list.querySelector('.round-now-next').textContent).toBe('Next R3 · 03:00');
+    renderer.updateRoundList([300, 240, 180], 3, 'Ladder Down', null, 30, 0, 100, PHASES.ROUND);
+    expect(list.querySelector('.round-now-next').textContent).toBe('Last round');
+    renderer.updateRoundList([300, 240, 180], 0, 'Ladder Down', null, 30, 0);
+    expect(list.querySelector('.round-now')).toBeNull(); // idle preview: list only
+  });
+});
 
 describe('ClassProgressRenderer', () => {
   it('scales the canvas backing store by devicePixelRatio and keeps the CSS size', () => {
@@ -699,7 +792,7 @@ describe('OverlayManager', () => {
     expect(overlay.isOpen()).toBe(false);
   });
 
-  it('reaches the system update screen from credits with a double star', () => {
+  it('reaches the maintenance screen from credits with a double star', () => {
     overlay.showTrainingMenu(baseConfig(), () => {});
     overlay.handleKey('/');
     expect(overlayEl.textContent).toContain('Credits');
@@ -707,7 +800,8 @@ describe('OverlayManager', () => {
     expect(overlay._mode).toBe('credits');
     overlay.handleKey('*');
     expect(overlay._mode).toBe('confirm-update');
-    expect(overlayEl.textContent).toContain('System Update');
+    expect(overlayEl.textContent).toContain('Maintenance');
+    expect(overlayEl.textContent).toContain('Install update and restart');
     overlay.handleKey('9');
     expect(overlay._mode).toBe('credits');
     overlay.handleKey('0');
@@ -721,13 +815,19 @@ describe('OverlayManager', () => {
     overlay.handleKey('/');
     overlay.handleKey('*');
     overlay.handleKey('*');
+    overlay.handleKey('1'); // Install → asks first
+    expect(overlay._mode).toBe('confirm-app-update');
+    overlay.handleKey('Menu'); // declined → back to the maintenance list
+    expect(overlay._mode).toBe('confirm-update');
     overlay.handleKey('1');
+    overlay.handleKey('2'); // Yes, install now
     expect(overlay._mode).toBe('updating');
     overlay.handleKey('5'); // ignored while updating
     expect(overlay._mode).toBe('updating');
     await new Promise(r => setTimeout(r, 0));
     expect(overlay._mode).toBe('update-error');
     expect(overlayEl.textContent).toContain('Connection refused');
+    expect(overlayEl.textContent).toContain('Menu to return');
     overlay.handleKey('5');
     expect(overlay._mode).toBe('credits');
     global.fetch = origFetch;
@@ -786,7 +886,8 @@ describe('InputHandler', () => {
     press('Enter');
     expect(state.paused).toBe(false);
     expect(document.getElementById('dual-timer-container').classList.contains('timer-paused-grayscale')).toBe(false);
-    expect(audio.playMuffle).toHaveBeenCalledTimes(2);
+    expect(audio.playMuffle).toHaveBeenCalledTimes(1); // pause
+    expect(audio.playResume).toHaveBeenCalledTimes(1); // resume sounds different
   });
 
   it('a long Enter press while idle resets to defaults', () => {
@@ -1440,8 +1541,10 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     expect(document.getElementById('preset-label').textContent).toContain(names[1]);
 
     press('Escape');
-    expect(selectedName()).toBe('Reset'); // a preset is selected → Reset row leads
-    press('ArrowDown');
+    expect(selectedName()).toBe('Training'); // presets lead; the Restore row sits third once a preset is selected
+    press('ArrowDown'); press('ArrowDown');
+    expect(selectedName()).toBe('Restore defaults');
+    press('ArrowUp'); press('ArrowUp');
     press('Enter'); // Training
     expect(overlay._mode).toBe('training');
     press('Escape'); // back to main
@@ -1505,18 +1608,56 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     press('ArrowRight'); // → seconds field
     press('PageUp'); // held ring: +15 s → 45
     expect(dur()).toBe('00:45');
-    press('Escape'); // back to the training list, not closed, selection kept
+    expect(overlayEl().textContent).toContain('Step 3 of 3');
+    press('Escape'); // Menu steps back one prompt, keeping the entered value
+    expect(overlay._mode).toBe('training-rounds');
+    expect(overlayEl().querySelector('.overlay-input').textContent).toBe('3');
+    expect(overlayEl().textContent).toContain('Step 2 of 3');
+    press('Escape');
+    expect(overlay._mode).toBe('training-minutes');
+    expect(overlayEl().querySelector('.overlay-input').textContent).toBe('12');
+    press('Escape'); // first step: back to the training list, not closed, selection kept
     expect(overlay._mode).toBe('training');
     expect(selectedName()).toBe('Ladder Up');
     press('Enter');
+    expect(overlayEl().textContent).toContain('Step 1 of 3');
+    expect(overlayEl().querySelector('.overlay-input-dim')).not.toBeNull(); // suggested value
+    expect(overlayEl().textContent).toContain('suggested');
     press('ArrowUp'); // 11 minutes
     press('Enter');
     press('Enter'); // empty rounds → default 4
     expect(overlay._mode).toBe('training-rest');
+    expect(overlayEl().textContent).toContain('minutes');
+    expect(overlayEl().textContent).toContain('seconds');
     press('Enter'); // empty rest → default 30
     expect(overlay.isOpen()).toBe(false);
     expect(state.roundDurations).toHaveLength(4);
     expect(state.config.restDurationSec).toBe(30);
+  });
+
+  it('chainsaw Menu steps back through the prompts and keeps confirmed values', () => {
+    press('Escape');
+    press('Enter'); // Training
+    press('Enter'); // Chainsaw
+    const dur = () => overlayEl().querySelector('.ts-minutes').textContent + ':' + overlayEl().querySelector('.ts-seconds').textContent;
+    press('ArrowUp'); // odd round 6:00
+    press('Enter');
+    expect(overlay._mode).toBe('chainsaw-odd-rest');
+    expect(dur()).toBe('00:30');
+    press('ArrowRight'); press('ArrowUp'); // odd rest 0:35
+    press('Enter');
+    expect(overlay._mode).toBe('chainsaw-even-round');
+    expect(overlayEl().textContent).toContain('Step 3 of 5');
+    press('Escape'); // back to odd rest with its value
+    expect(overlay._mode).toBe('chainsaw-odd-rest');
+    expect(dur()).toBe('00:35');
+    press('Escape');
+    expect(overlay._mode).toBe('chainsaw-odd-round');
+    expect(dur()).toBe('06:00');
+    press('Enter'); // forward again: odd rest keeps 0:35 instead of the 0:30 default
+    expect(dur()).toBe('00:35');
+    press('Escape'); press('Escape'); // first step → training list
+    expect(overlay._mode).toBe('training');
   });
 
   it('chainsaw round steps edit the min:sec picker with the ring', () => {
@@ -1550,16 +1691,17 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     overlay._onScheduleToggle = (v) => toggles.push(v);
     APP_SETTINGS.scheduleEnabled = true;
     press('Escape');
-    press('ArrowDown'); press('ArrowDown'); // Schedule
+    press('ArrowDown'); press('ArrowDown'); // View schedule
+    expect(selectedName()).toBe('View schedule');
     press('Enter');
     expect(overlay._mode).toBe('schedule');
-    press('ArrowRight'); // ring does nothing on the view-only schedule
+    press('ArrowRight'); // ◀▶ moves the large day view, never the setting
     expect(APP_SETTINGS.scheduleEnabled).toBe(true);
     expect(overlay._mode).toBe('schedule');
     press('Escape');
     expect(overlay._mode).toBe('main');
-    for (let i = 0; i < 5; i++) press('ArrowDown'); // Weekly schedule toggle
-    expect(selectedName()).toBe('Weekly schedule');
+    for (let i = 0; i < 4; i++) press('ArrowDown'); // Follow class schedule toggle
+    expect(selectedName()).toBe('Follow class schedule');
     expect(overlayEl().textContent).toContain('ON');
     press('Enter');
     expect(overlay._mode).toBe('main');
@@ -1569,17 +1711,25 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     expect(APP_SETTINGS.scheduleEnabled).toBe(true);
     expect(toggles).toEqual([false, true]);
     expect(overlay._mode).toBe('main');
-    press('ArrowUp'); press('ArrowUp'); press('ArrowUp'); press('ArrowUp'); press('ArrowUp'); // back to the top
+    for (let i = 0; i < 4; i++) press('ArrowUp'); // back to the top
 
     const before = APP_SETTINGS.holidayThemeEnabled;
-    press('ArrowDown'); press('ArrowDown'); press('ArrowDown'); press('ArrowDown'); // Holiday theme
+    for (let i = 0; i < 5; i++) press('ArrowDown'); // Holiday theme
     expect(selectedName()).toBe('Holiday theme');
     expect(overlayEl().textContent).toContain(before ? 'ON' : 'OFF');
     press('Enter'); // toggles in place, menu stays open
     expect(overlay._mode).toBe('main');
     expect(APP_SETTINGS.holidayThemeEnabled).toBe(!before);
     expect(overlayEl().textContent).toContain(before ? 'OFF' : 'ON');
-    press('ArrowDown'); press('ArrowDown'); press('ArrowDown'); // About (clamps)
+    press('ArrowDown'); // Quiet visuals toggles in place too
+    expect(selectedName()).toBe('Quiet visuals');
+    const quietBefore = APP_SETTINGS.quietVisuals;
+    press('Enter');
+    expect(APP_SETTINGS.quietVisuals).toBe(!quietBefore);
+    expect(document.body.classList.contains('quiet-visuals')).toBe(!quietBefore);
+    press('Enter');
+    expect(APP_SETTINGS.quietVisuals).toBe(quietBefore);
+    press('ArrowDown'); press('ArrowDown'); press('ArrowDown'); press('ArrowDown'); // About (clamps)
     expect(selectedName()).toBe('About');
     press('Enter');
     expect(overlay._mode).toBe('credits');
@@ -1591,34 +1741,89 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     APP_SETTINGS.holidayThemeEnabled = before;
   });
 
-  it('Update app item asks first, defaults to No, and only Yes triggers the update', () => {
+  it('Language row toggles English / Portuguese in place and relabels the menu', () => {
+    const names = () => Array.from(overlayEl().querySelectorAll('.mg-name')).map(el => el.textContent);
+    try {
+      press('Escape');
+      for (let i = 0; i < 7; i++) press('ArrowDown');
+      expect(selectedName()).toBe('Language');
+      expect(overlayEl().textContent).toContain('English');
+      press('Enter');
+      expect(overlay._mode).toBe('main');
+      expect(APP_SETTINGS.language).toBe('pt');
+      expect(selectedName()).toBe('Idioma'); // highlight stays on the row, menu re-labelled
+      expect(overlayEl().textContent).toContain('Português');
+      expect(names()).toContain('Treino');
+      expect(names()).toContain('Manutenção');
+      expect(document.getElementById('rest-label').textContent).toBe('Descanso');
+      press('Escape');
+      press('Enter'); // ready state label in Portuguese
+      expect(document.getElementById('status-bar').textContent).toContain('Pronto');
+      press('Escape');
+      expect(names()[2]).toBe('Restaurar padrões'); // third once the app is not in its default state
+      press('Enter'); // Treino (first row)
+      expect(overlayEl().textContent).toContain('Predefinições de treino');
+      press('Escape'); press('ArrowDown'); press('Enter'); // Competição
+      expect(overlayEl().textContent).toContain('Faixa Azul');
+      expect(overlayEl().textContent).toContain('Infantil');
+      press('Escape'); press('ArrowUp'); press('Enter'); // back to Treino
+      expect(overlayEl().textContent).toContain('Motosserra');
+      press('ArrowDown'); press('Enter'); // Escada crescente wizard
+      expect(overlayEl().textContent).toContain('Passo 1 de 3');
+      expect(overlayEl().textContent).toContain('Minutos no total');
+      press('Escape'); press('Escape');
+      for (let i = 0; i < 8; i++) press('ArrowDown'); // Restaurar padrões leads while ready
+      expect(selectedName()).toBe('Idioma');
+      press('Enter');
+      expect(APP_SETTINGS.language).toBe('en');
+      expect(selectedName()).toBe('Language');
+    } finally {
+      setLanguage('en');
+    }
+  });
+
+  it('Maintenance lists install and schedule sync; install asks first, defaults to No', () => {
     const perform = vi.spyOn(overlay, '_performUpdate').mockImplementation(() => {});
+    const toMaintenance = () => { for (let i = 0; i < 8; i++) press('ArrowDown'); };
     press('Escape');
-    for (let i = 0; i < 6; i++) press('ArrowDown'); // Update app
-    expect(selectedName()).toBe('Update app');
+    toMaintenance();
+    expect(selectedName()).toBe('Maintenance');
+    press('Enter');
+    expect(overlay._mode).toBe('confirm-update');
+    expect(selectedName()).toBe('Install update and restart');
     press('Enter');
     expect(overlay._mode).toBe('confirm-app-update');
-    expect(selectedName()).toBe('No');
-    press('Enter'); // default No → back to the menu, nothing downloaded
-    expect(overlay._mode).toBe('main');
+    expect(selectedName()).toBe('No, go back');
+    press('Enter'); // default No → back to the maintenance list, nothing downloaded
+    expect(overlay._mode).toBe('confirm-update');
     expect(perform).not.toHaveBeenCalled();
-    const toUpdate = () => { for (let i = 0; i < 6; i++) press('ArrowDown'); };
-    toUpdate(); press('Enter'); // reopen the prompt (menu highlight resets on return)
-    expect(overlay._mode).toBe('confirm-app-update');
-    press('Escape'); // Menu also declines
+    press('Escape'); // Menu from the list → main menu
     expect(overlay._mode).toBe('main');
-    toUpdate(); press('Enter');
+    toMaintenance(); press('Enter'); press('Enter');
+    press('Escape'); // Menu also declines
+    expect(overlay._mode).toBe('confirm-update');
+    press('Enter');
     press('ArrowDown');
-    expect(selectedName()).toBe('Yes, update now');
+    expect(selectedName()).toBe('Yes, install now');
     press('Enter');
     expect(perform).toHaveBeenCalledWith('/update', expect.any(String));
+    perform.mockClear();
+    press('Escape'); // (mocked update left the mode alone) → list
+    toMaintenance(); // noop if the menu is not open
+    overlay.closeOverlay();
+    press('Escape'); toMaintenance(); press('Enter');
+    press('ArrowDown'); // Sync class schedule runs without a prompt
+    expect(selectedName()).toBe('Sync class schedule');
+    press('Enter');
+    expect(perform).toHaveBeenCalledWith('/sync-schedule', expect.any(String));
     perform.mockRestore();
   });
 
-  it('Blank screen item enters stealth and any button wakes it', () => {
+  it('Hide display item enters stealth and any button wakes it', () => {
     press('Escape');
-    press('ArrowDown'); press('ArrowDown'); press('ArrowDown'); // Blank screen
-    expect(selectedName()).toBe('Blank screen');
+    press('ArrowDown'); press('ArrowDown'); press('ArrowDown'); // Hide display
+    expect(selectedName()).toBe('Hide display');
+    expect(overlayEl().textContent).toContain('rest timer stays');
     press('Enter');
     expect(overlay.isOpen()).toBe(false);
     expect(renderer.stealth).toBe(true);
@@ -1627,76 +1832,159 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     expect(input._ready).toBe(false); // the wake-up press does nothing else
   });
 
-  it('menu while running is Reset / Pause / Reset timer / Blank screen, each closing it', () => {
+  it('menu while running is Pause / Stop and keep settings / Restore defaults (asks) / Hide display', () => {
     press('Enter'); press('Enter');
     expect(state.phase).toBe(PHASES.ROUND);
     press('Escape');
     const names = () => Array.from(overlayEl().querySelectorAll('.mg-name')).map(el => el.textContent);
-    expect(names()).toEqual(['Reset', 'Pause', 'Reset timer', 'Blank screen']);
-    press('ArrowDown'); press('Enter'); // Pause
+    expect(names()).toEqual(['Pause', 'Stop and keep settings', 'Restore defaults', 'Hide display']);
+    press('Enter'); // Pause leads: a stray OK can never discard the session
     expect(overlay.isOpen()).toBe(false);
     expect(state.paused).toBe(true);
+    expect(document.getElementById('status-bar').textContent).toContain('Paused');
     press('Escape');
-    expect(names()[1]).toBe('Resume');
-    press('ArrowDown'); press('Enter'); // Resume
+    expect(names()[0]).toBe('Resume');
+    press('Enter'); // Resume
     expect(state.paused).toBe(false);
     expect(state.phase).toBe(PHASES.ROUND);
+    expect(document.getElementById('status-bar').innerHTML).toBe('');
 
     state.config.roundDurationSec = 123;
     press('Escape');
-    press('ArrowDown'); press('ArrowDown'); press('Enter'); // Reset timer → stopped, ready, same settings
+    press('ArrowDown'); press('Enter'); // Stop and keep settings → stopped, ready, same settings
     expect(overlay.isOpen()).toBe(false);
     expect(state.phase).toBe(PHASES.IDLE);
     expect(input._ready).toBe(true);
     expect(state.config.roundDurationSec).toBe(123);
+    expect(document.getElementById('status-bar').textContent).toContain('Ready');
 
     press('Enter'); // start again
     expect(state.phase).toBe(PHASES.ROUND);
     press('Escape');
-    press('Enter'); // Reset (first row)
+    press('ArrowDown'); press('ArrowDown'); press('Enter'); // Restore defaults → asks first
+    expect(overlay._mode).toBe('confirm-action');
+    expect(selectedName()).toBe('No, go back');
+    expect(overlayEl().textContent).toContain('Restore defaults?');
+    press('Enter'); // No → back to the running menu, timer untouched
+    expect(overlay._mode).toBe('main');
+    expect(state.phase).toBe(PHASES.ROUND);
+    press('ArrowDown'); press('ArrowDown'); press('Enter');
+    press('Escape'); // Menu declines too
+    expect(overlay._mode).toBe('main');
+    expect(state.phase).toBe(PHASES.ROUND);
+    press('ArrowDown'); press('ArrowDown'); press('Enter');
+    press('ArrowDown'); press('Enter'); // Yes, restore defaults
     expect(overlay.isOpen()).toBe(false);
     expect(state.phase).toBe(PHASES.IDLE);
     expect(input._ready).toBe(false);
     expect(state.config.roundDurationSec).toBe(FIXTURE_DEFAULTS.roundDurationSec);
   });
 
-  it('idle menu shows Reset first only when the app is not in its default state', () => {
+  it('idle menu is ordered by use and shows Restore defaults third only when not in the default state', () => {
     const names = () => Array.from(overlayEl().querySelectorAll('.mg-name')).map(el => el.textContent);
     press('Escape');
-    expect(names()[0]).toBe('Training'); // default state: no Reset row
+    expect(names()).toEqual(['Training', 'Competition', 'View schedule', 'Hide display', 'Follow class schedule',
+      'Holiday theme', 'Quiet visuals', 'Language', 'Maintenance', 'About']); // default state: no Restore row
     press('Escape');
     expect(overlay.isOpen()).toBe(false);
 
     press('Enter'); // ready state counts as non-default
     expect(input._ready).toBe(true);
     press('Escape');
-    expect(names()[0]).toBe('Reset');
-    press('Enter'); // Reset → back to default
+    expect(names().slice(0, 4)).toEqual(['Training', 'Competition', 'Restore defaults', 'View schedule']);
+    press('ArrowDown'); press('ArrowDown'); press('Enter'); // idle: restores without a prompt (nothing running to lose)
     expect(overlay.isOpen()).toBe(false);
     expect(input._ready).toBe(false);
     press('Escape');
-    expect(names()[0]).toBe('Training');
+    expect(names()[2]).toBe('View schedule');
     press('Escape');
 
     state.config.roundDurationSec = 123; // changed settings count as non-default
     press('Escape');
-    expect(names()[0]).toBe('Reset');
-    press('Enter');
+    expect(names()[2]).toBe('Restore defaults');
+    press('ArrowDown'); press('ArrowDown'); press('Enter');
     expect(state.config.roundDurationSec).toBe(FIXTURE_DEFAULTS.roundDurationSec);
     press('Escape');
-    expect(names()[0]).toBe('Training');
+    expect(names()[2]).toBe('View schedule');
   });
 
-  it('a changed preparation countdown shows the Reset row and Reset clears it', () => {
+  it('editing shows the field and controls in the state label', () => {
+    press('ArrowDown'); // enters editing on round minutes
+    const bar = document.getElementById('status-bar');
+    expect(bar.textContent).toContain('Editing round minutes');
+    expect(bar.textContent).toContain('▶ start');
+    press('ArrowRight');
+    expect(bar.textContent).toContain('Editing round seconds');
+    press('Escape');
+    expect(bar.innerHTML).toBe('');
+    press('Enter'); press('Enter'); // running
+    press('ArrowDown'); // editing while running warns that a change restarts
+    expect(bar.textContent).toContain('edit & restart');
+    press('Escape');
+  });
+
+  it('a finished session is labelled Finished until the next start', () => {
+    state.config.numRounds = 1;
+    const bar = document.getElementById('status-bar');
+    press('Enter'); press('Enter');
+    expect(state.phase).toBe(PHASES.ROUND);
+    expect(bar.innerHTML).toBe('');
+    vi.advanceTimersByTime(FIXTURE_DEFAULTS.roundDurationSec * 1000 + 1500);
+    // The boot wiring sets the Finished label; here the fixture has no boot, so
+    // the renderer is driven directly the way boot does on natural completion
+    renderer.updateStatusBar('finished');
+    expect(bar.textContent).toContain('Finished');
+    press('Enter');
+    if (state.phase === PHASES.IDLE) press('Enter');
+    expect(bar.innerHTML).toBe('');
+  });
+
+  it('schedule overlay opens on today and ◀▶ change the day shown large', () => {
+    input._scheduleManager = { _schedule: [
+      { dayOfWeek: 'Tuesday', startTime: '18:00', endTime: '19:00', title: 'Adult Jiu-Jitsu, all levels', classType: 'adult_all_levels' },
+      { dayOfWeek: 'Wednesday', startTime: '17:00', endTime: '18:00', title: 'Kids Basics', classType: 'kids' }
+    ] };
+    press('Escape');
+    press('ArrowDown'); press('ArrowDown'); press('Enter'); // View schedule (fixture clock: Tuesday Sept 8 2026)
+    expect(overlay._mode).toBe('schedule');
+    const detail = () => overlayEl().querySelector('.sched-detail').textContent;
+    expect(detail()).toContain('Tuesday');
+    expect(detail()).toContain('today');
+    expect(detail()).toContain('Adult Jiu-Jitsu, all levels');
+    expect(detail()).toContain('pm'); // AM/PM shown in the schedule
+    expect(overlayEl().querySelector('.sched-day.sched-sel.sched-today')).not.toBeNull();
+    press('ArrowRight');
+    expect(detail()).toContain('Wednesday');
+    expect(detail()).toContain('Kids Basics');
+    press('ArrowRight');
+    expect(detail()).toContain('Thursday');
+    expect(detail()).toContain('No classes');
+    press('Escape');
+    expect(overlay._mode).toBe('main');
+    press('Escape');
+    try {
+      setLanguage('pt');
+      press('Escape');
+      press('ArrowDown'); press('ArrowDown'); press('Enter');
+      expect(detail()).toContain('Terça');
+      expect(detail()).toContain('hoje');
+      expect(overlayEl().textContent).toContain('Jiu-Jitsu adulto, todos os níveis');
+      expect(overlayEl().textContent).toContain('Infantil básico');
+      expect(overlayEl().textContent).not.toContain('Kids Basics');
+      press('Escape');
+    } finally { setLanguage('en'); }
+  });
+
+  it('a changed preparation countdown shows the Restore row and restoring clears it', () => {
     const names = () => Array.from(overlayEl().querySelectorAll('.mg-name')).map(el => el.textContent);
     state.config.prepDurationSec = 10;
     press('Escape');
-    expect(names()[0]).toBe('Reset');
-    press('Enter');
+    expect(names()[2]).toBe('Restore defaults');
+    press('ArrowDown'); press('ArrowDown'); press('Enter');
     expect(overlay.isOpen()).toBe(false);
     expect(state.config.prepDurationSec).toBe(0);
     press('Escape');
-    expect(names()[0]).toBe('Training');
+    expect(names()[2]).toBe('View schedule');
   });
 
   it.each(['blur', 'visibilitychange'])('a hold interrupted by %s never fires', event => {
@@ -1723,5 +2011,31 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     vi.advanceTimersByTime(HOLD_MS * 2);
     expect(state.phase).toBe(PHASES.ROUND);
     input = new InputHandler(engine, overlay, renderer, audio, state); // afterEach destroys this one
+  });
+});
+
+describe('main menu icons', () => {
+  it('every row has its own icon, idle and running', () => {
+    vi.useFakeTimers();
+    loadDom();
+    const state = createTimerState({ roundDurationSec: 5, restDurationSec: 2, numRounds: 0, prepDurationSec: 0 });
+    const renderer = new Renderer();
+    const overlay = new OverlayManager();
+    const engine = new TimerEngine(state, () => {}, () => {});
+    const input = new InputHandler(engine, overlay, renderer, fakeAudio(), state);
+    input._displayModeCallback = () => {};
+    const icons = () => Array.from(document.querySelectorAll('#overlay .mg-icon')).map(el => el.innerHTML);
+    state.config.roundDurationSec = 99; // non-default → Restore row present
+    press('Escape');
+    let list = icons();
+    expect(list.every(Boolean)).toBe(true);
+    expect(new Set(list).size).toBe(list.length);
+    press('Escape');
+    press('Enter'); press('Enter');
+    press('Escape');
+    list = icons();
+    expect(new Set(list).size).toBe(list.length);
+    input.destroy(); engine.stop();
+    vi.useRealTimers();
   });
 });
