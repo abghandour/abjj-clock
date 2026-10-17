@@ -35,6 +35,7 @@ const {
   DISPLAY_MODES,
   DisplaySyncManager,
   STRINGS, LANGUAGES, t, setLanguage, applyStaticTranslations, presetDisplayName, classDisplayName,
+  TetrisGame, TETRIS_COLS, TETRIS_ROWS,
   SYNC_SECTION_IDS,
   SYNC_ATTR_IDS,
   buildSyncSnapshot,
@@ -60,7 +61,7 @@ function fakeAudio() {
   const names = [
     '_ensureContext', 'playCountdownBeep', 'playPrepBeep', 'playRoundStartFanfare',
     'playEndOfRoundBeep', 'playEndOfRestBeep', 'playEndOfRoundBeepT2', 'playEndOfRestBeepT2',
-    'playCountdownBeepT2', 'playEndOfClassRing', 'playStartOfClassRing', 'playMuffle', 'playResume', 'playCancel'
+    'playCountdownBeepT2', 'playEndOfClassRing', 'playStartOfClassRing', 'playMuffle', 'playResume', 'playCancel', 'playBark'
   ];
   const audio = {};
   for (const n of names) audio[n] = vi.fn();
@@ -1729,7 +1730,9 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     expect(document.body.classList.contains('quiet-visuals')).toBe(!quietBefore);
     press('Enter');
     expect(APP_SETTINGS.quietVisuals).toBe(quietBefore);
-    press('ArrowDown'); press('ArrowDown'); press('ArrowDown'); press('ArrowDown'); // About (clamps)
+    press('ArrowDown'); press('ArrowDown'); press('ArrowDown'); press('ArrowDown'); // clamps on the last row
+    expect(selectedName()).toBe('Tetris');
+    press('ArrowUp'); // About
     expect(selectedName()).toBe('About');
     press('Enter');
     expect(overlay._mode).toBe('credits');
@@ -1884,7 +1887,7 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     const names = () => Array.from(overlayEl().querySelectorAll('.mg-name')).map(el => el.textContent);
     press('Escape');
     expect(names()).toEqual(['Training', 'Competition', 'View schedule', 'Hide display', 'Follow class schedule',
-      'Holiday theme', 'Quiet visuals', 'Language', 'Maintenance', 'About']); // default state: no Restore row
+      'Holiday theme', 'Quiet visuals', 'Language', 'Maintenance', 'About', 'Tetris']); // default state: no Restore row
     press('Escape');
     expect(overlay.isOpen()).toBe(false);
 
@@ -2037,5 +2040,129 @@ describe('main menu icons', () => {
     expect(new Set(list).size).toBe(list.length);
     input.destroy(); engine.stop();
     vi.useRealTimers();
+  });
+});
+
+describe('Tetris', () => {
+  let root, game, lines;
+  // Deterministic piece order: always the O piece (2x2), easy to stack
+  const alwaysO = () => 0.2; // index 1 of 7 → 'O'
+  beforeEach(() => {
+    vi.useFakeTimers();
+    loadDom();
+    root = document.createElement('div');
+    document.body.appendChild(root);
+    lines = [];
+    game = new TetrisGame(root, { onLines: (n) => lines.push(n), random: alwaysO });
+    game.start();
+  });
+  afterEach(() => { game.stop(); vi.useRealTimers(); });
+
+  it('renders a 10x20 grid, moves, hard drops and locks pieces', () => {
+    expect(root.querySelectorAll('.tetris-board .tc')).toHaveLength(TETRIS_COLS * TETRIS_ROWS);
+    expect(root.querySelector('.tetris-dog').getAttribute('src')).toBe('paco.png');
+    const filled = () => root.querySelectorAll('.tetris-board .tc-O').length;
+    expect(filled()).toBe(4); // the falling piece is painted
+    for (let i = 0; i < 6; i++) game.handleKey('ArrowLeft');
+    expect(game.cur.x).toBe(0); // walls stop movement
+    game.handleKey('Enter'); // hard drop
+    expect(game.board[TETRIS_ROWS - 1][0]).toBe('O');
+    expect(game.board[TETRIS_ROWS - 1][1]).toBe('O');
+    expect(filled()).toBe(8); // locked piece + the new falling one
+    expect(lines).toEqual([]);
+  });
+
+  it('gravity ticks on the interval and pausing stops it', () => {
+    const y = game.cur.y;
+    vi.advanceTimersByTime(game.interval);
+    expect(game.cur.y).toBe(y + 1);
+    game.handleKey('Play'); // pause
+    expect(game.paused).toBe(true);
+    expect(root.querySelector('.tetris-status').textContent).toBe('Paused');
+    vi.advanceTimersByTime(game.interval * 3);
+    expect(game.cur.y).toBe(y + 1);
+    game.handleKey('Play');
+    expect(game.paused).toBe(false);
+    expect(root.querySelector('.tetris-status').textContent).toBe('');
+  });
+
+  it('clears full lines, scores them and makes Paco bark', () => {
+    // Five O pieces across the bottom fill two rows at once
+    for (let i = 0; i < 5; i++) {
+      game.cur.x = i * 2;
+      game.handleKey('Enter');
+    }
+    expect(lines).toEqual([2]);
+    expect(game.lines).toBe(2);
+    expect(game.score).toBe(300);
+    expect(game.board[TETRIS_ROWS - 1].every(c => c === '')).toBe(true);
+    expect(root.querySelector('.tetris-dog').classList.contains('barking')).toBe(true);
+    expect(root.querySelector('.tetris-bubble').textContent).toBe('Woof!');
+    vi.advanceTimersByTime(900);
+    expect(root.querySelector('.tetris-dog').classList.contains('barking')).toBe(false);
+    expect(root.querySelector('.tetris-bubble').textContent).toBe('');
+    expect(root.querySelector('.tetris-lines').textContent).toBe('2');
+  });
+
+  it('a four-line clear gets the big bark', () => {
+    game.board = game.board.map((row, r) => r >= TETRIS_ROWS - 4 ? row.map((_, c) => (c < 8 ? 'I' : '')) : row);
+    game.cur = { type: 'I', shape: [[1], [1], [1], [1]], x: 8, y: 0 };
+    game.handleKey('Enter');
+    game.cur = { type: 'I', shape: [[1], [1], [1], [1]], x: 9, y: 0 };
+    game.handleKey('Enter');
+    expect(lines).toEqual([4]);
+    expect(game.score).toBe(800);
+    expect(root.querySelector('.tetris-bubble').textContent).toBe('WOOF WOOF!');
+  });
+
+  it('ends when a piece cannot spawn and OK restarts', () => {
+    game.board = game.board.map((row, r) => r >= 1 ? row.map((_, c) => (c === 0 ? '' : 'Z')) : row);
+    game.cur.x = 4; game.handleKey('Enter'); // locks right at the top → next spawn collides
+    expect(game.over).toBe(true);
+    expect(root.querySelector('.tetris-status').textContent).toContain('Game over');
+    game.handleKey('ArrowLeft'); // ignored
+    game.handleKey('Enter');
+    expect(game.over).toBe(false);
+    expect(game.lines).toBe(0);
+    expect(game.board.every(row => row.every(c => c === ''))).toBe(true);
+  });
+});
+
+describe('Tetris from the main menu', () => {
+  let state, engine, renderer, overlay, audio, input;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    loadDom();
+    state = createTimerState({ roundDurationSec: 5, restDurationSec: 2, numRounds: 0, prepDurationSec: 0 });
+    renderer = new Renderer();
+    audio = fakeAudio();
+    overlay = new OverlayManager();
+    engine = new TimerEngine(state, () => {}, () => {});
+    input = new InputHandler(engine, overlay, renderer, audio, state);
+    input._defaultConfigCallback = () => ({ roundDurationSec: 5, restDurationSec: 2, numRounds: 0, prepDurationSec: 0, presetName: null });
+    document.body.classList.add('timer-idle');
+  });
+  afterEach(() => { input.destroy(); engine.stop(); vi.useRealTimers(); });
+
+  it('Tetris is the last row; Menu quits back to the menu and the bark plays through the audio manager', () => {
+    press('Escape');
+    for (let i = 0; i < 12; i++) press('ArrowDown');
+    expect(document.querySelector('#overlay .mg-name.mg-sel').textContent).toBe('Tetris');
+    press('Enter');
+    expect(overlay._mode).toBe('tetris');
+    expect(document.querySelectorAll('#overlay .tetris-board .tc')).toHaveLength(200);
+    const game = overlay._tetris;
+    press('ArrowRight');
+    expect(game.cur.x).toBeGreaterThan(0);
+    game.board = game.board.map((row, r) => r === TETRIS_ROWS - 1 ? row.map((_, c) => (c < 6 ? 'T' : '')) : row);
+    game.cur = { type: 'I', shape: [[1, 1, 1, 1]], x: 6, y: 0 };
+    press('Enter'); // hard drop completes the bottom row
+    expect(audio.playBark).toHaveBeenCalledWith(1);
+    press('Escape'); // Menu quits
+    expect(overlay._mode).toBe('main');
+    expect(overlay._tetris).toBeNull();
+    vi.advanceTimersByTime(5000); // no timer left running
+    press('Escape');
+    expect(overlay.isOpen()).toBe(false);
   });
 });

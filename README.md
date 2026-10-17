@@ -43,7 +43,7 @@ Português; every label, prompt, state text and menu row switches, preset names
 included; known class titles
 switch; an unrecognised class title shows as written in the calendar), Maintenance
 (Install update and restart, which asks first with the highlight on No, and
-Sync class schedule) and About. While a timer runs the menu is Pause/Resume
+Sync class schedule), About and Tetris. While a timer runs the menu is Pause/Resume
 first, then Stop and keep settings, Restore defaults (asks first) and Hide
 display; each closes the menu.
 
@@ -60,6 +60,11 @@ keeps the value already entered, ▲▼ change the value, OK accepts. A suggeste
 value is shown at full contrast with a "suggested · OK accepts" caption; the
 min:sec picker labels its minutes and seconds fields. Typing digits still
 works from a keyboard.
+
+Tetris (last menu row) is a small game for the remote: ◀▶ move, ▲ rotate,
+▼ soft drop, OK hard drop, ▶ pause, Menu quits. Paco sits in the corner and
+barks on every cleared line (twice for a four-line Tetris). OK restarts after
+a game over. The board is plain HTML, so it shows on the second TV too.
 
 Quiet visuals (menu toggle) replaces the full-screen white flash with an edge
 flash, stops the countdown dimming and shows a steady outline instead of

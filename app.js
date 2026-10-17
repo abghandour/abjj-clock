@@ -276,7 +276,11 @@ const STRINGS = {
     'maint.connFailed': 'Connection failed', 'maint.unknown': 'Unknown error',
     'screens.toast': 'Screens: {mode}', 'screens.mirror': 'Mirror', 'screens.clocktimer': 'Clock + Timer', 'screens.split': 'Split Timers',
     'sync.disconnected': 'Primary display disconnected. Timer may be out of date',
-    'stealth.hint': 'Press any key to display timers'
+    'stealth.hint': 'Press any key to display timers',
+    'menu.tetris': 'Tetris', 'tetris.score': 'Score', 'tetris.lines': 'Lines', 'tetris.level': 'Level', 'tetris.next': 'Next',
+    'tetris.paused': 'Paused', 'tetris.over': 'Game over', 'tetris.restart': 'OK: play again',
+    'tetris.hint': '◀▶ move · ▲ rotate · ▼ drop · OK hard drop · ▶ pause · Menu quit',
+    'tetris.bark': 'Woof!', 'tetris.bigBark': 'WOOF WOOF!'
   },
   pt: {
     'menu.title': 'Menu', 'menu.training': 'Treino', 'menu.competition': 'Competição',
@@ -332,7 +336,11 @@ const STRINGS = {
     'maint.connFailed': 'Falha na conexão', 'maint.unknown': 'Erro desconhecido',
     'screens.toast': 'Telas: {mode}', 'screens.mirror': 'Espelho', 'screens.clocktimer': 'Relógio + Cronômetro', 'screens.split': 'Cronômetros separados',
     'sync.disconnected': 'Tela principal desconectada. O cronômetro pode estar desatualizado',
-    'stealth.hint': 'Pressione qualquer botão para mostrar os cronômetros'
+    'stealth.hint': 'Pressione qualquer botão para mostrar os cronômetros',
+    'menu.tetris': 'Tetris', 'tetris.score': 'Pontos', 'tetris.lines': 'Linhas', 'tetris.level': 'Nível', 'tetris.next': 'Próxima',
+    'tetris.paused': 'Pausado', 'tetris.over': 'Fim de jogo', 'tetris.restart': 'OK: jogar de novo',
+    'tetris.hint': '◀▶ mover · ▲ girar · ▼ descer · OK cair · ▶ pausar · Menu sair',
+    'tetris.bark': 'Au!', 'tetris.bigBark': 'AU AU!'
   }
 };
 
@@ -1032,6 +1040,41 @@ class AudioManager {
   }
 
   /**
+   * A little dog bark: a burst of band-passed noise with a quick pitch drop.
+   * @param {number} [count=1] - Barks in a row (a four-line Tetris gets two)
+   */
+  playBark(count) {
+    try {
+      if (!this._ensureContext()) return;
+      const ctx = this.audioCtx;
+      const vol = APP_SETTINGS.audio.volume;
+      const n = Math.max(1, count | 0);
+      for (let i = 0; i < n; i++) {
+        const at = ctx.currentTime + i * 0.22;
+        const osc = ctx.createOscillator();
+        const filter = ctx.createBiquadFilter();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(620, at);
+        osc.frequency.exponentialRampToValueAtTime(240, at + 0.12);
+        filter.type = 'bandpass';
+        filter.frequency.value = 900;
+        filter.Q.value = 2;
+        gain.gain.setValueAtTime(0.0001, at);
+        gain.gain.exponentialRampToValueAtTime(vol * 1.4, at + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.16);
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(at);
+        osc.stop(at + 0.17);
+      }
+    } catch (e) {
+      console.warn('Bark playback failed:', e);
+    }
+  }
+
+  /**
    * Play a short descending tone for stop/reset actions.
    */
   playCancel() {
@@ -1102,6 +1145,7 @@ const ICONS = {
   globe: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
   wrench: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`,
   info: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
+  gamepad: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="11" rx="4"/><path d="M6 12h4M8 10v4"/><path d="M15 11h.01M18 13h.01"/></svg>`,
   snow: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M3.3 7l17.4 10"/><path d="M3.3 17L20.7 7"/><path d="M9 4.5l3 2 3-2"/><path d="M9 19.5l3-2 3 2"/><path d="M4.5 9.5l3.5 1-1 3.5"/><path d="M19.5 14.5l-3.5-1 1-3.5"/><path d="M4.5 14.5l3.5-1-1-3.5"/><path d="M19.5 9.5l-3.5 1 1 3.5"/></svg>`
 };
 
@@ -1935,6 +1979,7 @@ class OverlayManager {
    * Close the active overlay and reset internal state.
    */
   closeOverlay() {
+    if (this._tetris) { this._tetris.stop(); this._tetris = null; }
     this._open = false;
     this._mode = null;
     this._inputBuffer = '';
@@ -1978,6 +2023,20 @@ class OverlayManager {
         `</div>` +
       `</div>`;
     this.overlayEl.classList.add('active');
+  }
+
+  /**
+   * Open the Tetris game. Menu quits back to the main menu.
+   * @param {{onLines?: function(number)}} [opts]
+   */
+  showTetris(opts) {
+    this._open = true;
+    this._mode = 'tetris';
+    if (!this.overlayEl) return;
+    this.overlayEl.innerHTML = `<div class="advanced-menu overlay-content tetris-overlay"><div class="menu-title">${t('menu.tetris')}</div><div class="tetris-root"></div></div>`;
+    this.overlayEl.classList.add('active');
+    this._tetris = new TetrisGame(this.overlayEl.querySelector('.tetris-root'), opts);
+    this._tetris.start();
   }
 
   /**
@@ -2080,6 +2139,7 @@ class OverlayManager {
       this._renderConfirmUpdate();
       return;
     }
+    if (m === 'tetris' && this._tetris) { this._tetris.stop(); this._tetris = null; }
     if (this._wizardBack()) return;
     if ((m && m.startsWith('training-')) || (m && m.startsWith('chainsaw-'))) {
       // First step: back to the preset list, keeping the highlighted preset
@@ -2186,6 +2246,11 @@ class OverlayManager {
     }
     if (key === '/' && !modal && this._mode !== 'training') {
       this.closeOverlay();
+      return;
+    }
+
+    if (this._mode === 'tetris') {
+      if (this._tetris) this._tetris.handleKey(key);
       return;
     }
 
@@ -3078,6 +3143,256 @@ class OverlayManager {
 
 }
 
+// --- TetrisGame ---
+
+const TETRIS_COLS = 10;
+const TETRIS_ROWS = 20;
+const TETRIS_SHAPES = {
+  I: [[1, 1, 1, 1]],
+  O: [[1, 1], [1, 1]],
+  T: [[0, 1, 0], [1, 1, 1]],
+  S: [[0, 1, 1], [1, 1, 0]],
+  Z: [[1, 1, 0], [0, 1, 1]],
+  J: [[1, 0, 0], [1, 1, 1]],
+  L: [[0, 0, 1], [1, 1, 1]]
+};
+const TETRIS_LINE_SCORES = [0, 100, 300, 500, 800];
+
+/**
+ * A deliberately small Tetris rendered as a grid of divs (so it mirrors to
+ * the second TV like every other overlay) and driven by the remote. Paco
+ * sits in the corner and barks whenever a line clears.
+ */
+class TetrisGame {
+  /**
+   * @param {HTMLElement} rootEl - Container to render into
+   * @param {{onLines?: function(number), random?: function(): number}} [opts]
+   */
+  constructor(rootEl, opts) {
+    this.rootEl = rootEl;
+    this.onLines = (opts && opts.onLines) || (() => {});
+    this._random = (opts && opts.random) || Math.random;
+    this._timerId = null;
+    this._barkTimer = null;
+    this.reset();
+  }
+
+  reset() {
+    this.board = Array.from({ length: TETRIS_ROWS }, () => new Array(TETRIS_COLS).fill(''));
+    this.score = 0;
+    this.lines = 0;
+    this.over = false;
+    this.paused = false;
+    this.next = this._randomPiece();
+    this._spawn();
+  }
+
+  get level() { return Math.floor(this.lines / 10) + 1; }
+  get interval() { return Math.max(120, 800 - (this.level - 1) * 70); }
+
+  _randomPiece() {
+    const types = Object.keys(TETRIS_SHAPES);
+    const type = types[Math.floor(this._random() * types.length) % types.length];
+    return { type, shape: TETRIS_SHAPES[type].map(r => r.slice()) };
+  }
+
+  _spawn() {
+    const piece = this.next;
+    this.next = this._randomPiece();
+    this.cur = { type: piece.type, shape: piece.shape, x: Math.floor((TETRIS_COLS - piece.shape[0].length) / 2), y: 0 };
+    if (this._collides(this.cur.shape, this.cur.x, this.cur.y)) {
+      this.over = true;
+      this.stop();
+    }
+  }
+
+  _collides(shape, x, y) {
+    for (let r = 0; r < shape.length; r++) {
+      for (let c = 0; c < shape[r].length; c++) {
+        if (!shape[r][c]) continue;
+        const bx = x + c, by = y + r;
+        if (bx < 0 || bx >= TETRIS_COLS || by >= TETRIS_ROWS) return true;
+        if (by >= 0 && this.board[by][bx]) return true;
+      }
+    }
+    return false;
+  }
+
+  /** Start (or restart after game over) the falling timer. */
+  start() {
+    if (this.over) this.reset();
+    this.paused = false;
+    this._schedule();
+    this.render();
+  }
+
+  stop() {
+    if (this._timerId !== null) { clearInterval(this._timerId); this._timerId = null; }
+    if (this._barkTimer) { clearTimeout(this._barkTimer); this._barkTimer = null; }
+  }
+
+  _schedule() {
+    if (this._timerId !== null) clearInterval(this._timerId);
+    this._timerId = setInterval(() => this.tick(), this.interval);
+  }
+
+  togglePause() {
+    if (this.over) return;
+    this.paused = !this.paused;
+    if (this.paused) { clearInterval(this._timerId); this._timerId = null; } else this._schedule();
+    this.render();
+  }
+
+  move(dx) {
+    if (this.over || this.paused) return;
+    if (!this._collides(this.cur.shape, this.cur.x + dx, this.cur.y)) { this.cur.x += dx; this.render(); }
+  }
+
+  rotate() {
+    if (this.over || this.paused) return;
+    const s = this.cur.shape;
+    const rotated = s[0].map((_, c) => s.map(row => row[c]).reverse());
+    // Try in place, then nudged left / right (wall kick)
+    for (const dx of [0, -1, 1, -2, 2]) {
+      if (!this._collides(rotated, this.cur.x + dx, this.cur.y)) {
+        this.cur.shape = rotated; this.cur.x += dx; this.render(); return;
+      }
+    }
+  }
+
+  /** One step down; locks the piece when it cannot move. */
+  tick() {
+    if (this.over || this.paused) return;
+    if (!this._collides(this.cur.shape, this.cur.x, this.cur.y + 1)) {
+      this.cur.y += 1;
+    } else {
+      this._lock();
+    }
+    this.render();
+  }
+
+  softDrop() { if (!this.over && !this.paused) { this.tick(); } }
+
+  hardDrop() {
+    if (this.over || this.paused) return;
+    while (!this._collides(this.cur.shape, this.cur.x, this.cur.y + 1)) this.cur.y += 1;
+    this._lock();
+    this.render();
+  }
+
+  _lock() {
+    const { shape, x, y, type } = this.cur;
+    for (let r = 0; r < shape.length; r++) {
+      for (let c = 0; c < shape[r].length; c++) {
+        if (shape[r][c] && y + r >= 0) this.board[y + r][x + c] = type;
+      }
+    }
+    const kept = this.board.filter(row => row.some(cell => !cell));
+    const cleared = TETRIS_ROWS - kept.length;
+    if (cleared > 0) {
+      while (kept.length < TETRIS_ROWS) kept.unshift(new Array(TETRIS_COLS).fill(''));
+      this.board = kept;
+      const before = this.level;
+      this.lines += cleared;
+      this.score += TETRIS_LINE_SCORES[cleared] * before;
+      if (this.level !== before && this._timerId !== null) this._schedule();
+      this._bark(cleared);
+      this.onLines(cleared);
+    }
+    this._spawn();
+  }
+
+  _bark(cleared) {
+    this._barkText = cleared >= 4 ? t('tetris.bigBark') : t('tetris.bark');
+    this._barking = true;
+    if (this._barkTimer) clearTimeout(this._barkTimer);
+    this._barkTimer = setTimeout(() => { this._barking = false; this._barkTimer = null; this.render(); }, cleared >= 4 ? 1400 : 800);
+  }
+
+  /** Handle a normalised remote key. Returns true when consumed. */
+  handleKey(key) {
+    if (this.over) {
+      if (key === 'Enter' || key === 'Play') this.start();
+      return true;
+    }
+    switch (key) {
+      case 'ArrowLeft': this.move(-1); return true;
+      case 'ArrowRight': this.move(1); return true;
+      case 'ArrowUp': this.rotate(); return true;
+      case 'ArrowDown': this.softDrop(); return true;
+      case 'StepDown': case 'Enter': this.hardDrop(); return true;
+      case 'Play': this.togglePause(); return true;
+      default: return false;
+    }
+  }
+
+  /** Board with the falling piece painted in. */
+  _cells() {
+    const cells = this.board.map(row => row.slice());
+    if (!this.over) {
+      const { shape, x, y, type } = this.cur;
+      for (let r = 0; r < shape.length; r++) {
+        for (let c = 0; c < shape[r].length; c++) {
+          if (shape[r][c] && y + r >= 0 && y + r < TETRIS_ROWS) cells[y + r][x + c] = type;
+        }
+      }
+    }
+    return cells;
+  }
+
+  render() {
+    if (!this.rootEl) return;
+    if (!this.rootEl.querySelector('.tetris-board')) this._build();
+    const cellEls = this.rootEl.querySelectorAll('.tetris-board .tc');
+    const cells = this._cells();
+    let i = 0;
+    for (let r = 0; r < TETRIS_ROWS; r++) {
+      for (let c = 0; c < TETRIS_COLS; c++) {
+        const cls = cells[r][c] ? `tc tc-${cells[r][c]}` : 'tc';
+        if (cellEls[i].className !== cls) cellEls[i].className = cls;
+        i++;
+      }
+    }
+    const nextEls = this.rootEl.querySelectorAll('.tetris-next .tc');
+    const ns = this.next.shape;
+    for (let r = 0; r < 2; r++) {
+      for (let c = 0; c < 4; c++) {
+        const on = ns[r] && ns[r][c];
+        const cls = on ? `tc tc-${this.next.type}` : 'tc';
+        const el = nextEls[r * 4 + c];
+        if (el.className !== cls) el.className = cls;
+      }
+    }
+    const set = (sel, text) => { const el = this.rootEl.querySelector(sel); if (el && el.textContent !== String(text)) el.textContent = String(text); };
+    set('.tetris-score', this.score);
+    set('.tetris-lines', this.lines);
+    set('.tetris-level', this.level);
+    const status = this.rootEl.querySelector('.tetris-status');
+    const statusText = this.over ? `${t('tetris.over')} · ${t('tetris.restart')}` : (this.paused ? t('tetris.paused') : '');
+    if (status && status.textContent !== statusText) status.textContent = statusText;
+    const dog = this.rootEl.querySelector('.tetris-dog');
+    if (dog) dog.classList.toggle('barking', !!this._barking);
+    set('.tetris-bubble', this._barking ? this._barkText : '');
+  }
+
+  _build() {
+    const cell = '<span class="tc"></span>';
+    this.rootEl.innerHTML =
+      `<div class="tetris-wrap">` +
+        `<div class="tetris-board">${cell.repeat(TETRIS_ROWS * TETRIS_COLS)}</div>` +
+        `<div class="tetris-side">` +
+          `<div class="tetris-stat"><span class="tetris-stat-label">${t('tetris.score')}</span><span class="tetris-score">0</span></div>` +
+          `<div class="tetris-stat"><span class="tetris-stat-label">${t('tetris.lines')}</span><span class="tetris-lines">0</span></div>` +
+          `<div class="tetris-stat"><span class="tetris-stat-label">${t('tetris.level')}</span><span class="tetris-level">1</span></div>` +
+          `<div class="tetris-stat"><span class="tetris-stat-label">${t('tetris.next')}</span><div class="tetris-next">${cell.repeat(8)}</div></div>` +
+          `<div class="tetris-status"></div>` +
+          `<div class="tetris-dog-wrap"><span class="tetris-bubble"></span><img class="tetris-dog" src="paco.png" alt="Paco"></div>` +
+        `</div>` +
+      `</div>` +
+      `<div class="tetris-hint">${t('tetris.hint')}</div>`;
+  }
+}
+
 // --- InputHandler ---
 
 /**
@@ -3923,6 +4238,9 @@ class InputHandler {
     } });
     items.push({ id: 'credits', icon: 'info', name: t('menu.about'), submenu: true, action: () => {
       this.overlayManager.showCredits();
+    } });
+    items.push({ id: 'tetris', icon: 'gamepad', name: t('menu.tetris'), submenu: true, action: () => {
+      this.overlayManager.showTetris({ onLines: (n) => this.audioManager.playBark(n >= 4 ? 2 : 1) });
     } });
     this.overlayManager.showMainMenu(items);
     this.renderer.updateStatusBar('menu');
@@ -5226,7 +5544,7 @@ class DisplaySyncManager {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { formatTime, isValidSeconds, isNumeric, escapeHtml, generateRoundDurations, DEFAULT_CONFIG, APP_SETTINGS, applyConfigSettings, PHASES, prepBeepSecond, STORAGE_KEY, StorageManager, createTimerState, TimerEngine, AudioManager, ICONS, presetIcon, TRAINING_MODES, Renderer, ClassProgressRenderer, OverlayManager, InputHandler, ClassPresetManager, ScheduleManager, WeatherManager, HolidayThemeManager, HOLIDAY_THEMES, getActiveHoliday, VALID_DAYS, VALID_CLASS_TYPES, SCHEDULE_STORAGE_KEY, SYNCED_SCHEDULE_FILE, DISPLAY_MODES, DISPLAY_MODE_LABELS, DISPLAY_MODE_STORAGE_KEY, nextDisplayMode, DisplaySyncManager, SYNC_SECTION_IDS, SYNC_ATTR_IDS, buildSyncSnapshot, applySyncSnapshot, syncElementFromHtml, HOLD_MS, TRAINING_MENU_ITEMS, moveSelection, stepNumericBuffer, STRINGS, LANGUAGES, t, setLanguage, applyStaticTranslations, presetDisplayName, classDisplayName, CLASS_TITLES };
+  module.exports = { formatTime, isValidSeconds, isNumeric, escapeHtml, generateRoundDurations, DEFAULT_CONFIG, APP_SETTINGS, applyConfigSettings, PHASES, prepBeepSecond, STORAGE_KEY, StorageManager, createTimerState, TimerEngine, AudioManager, ICONS, presetIcon, TRAINING_MODES, Renderer, ClassProgressRenderer, OverlayManager, InputHandler, ClassPresetManager, ScheduleManager, WeatherManager, HolidayThemeManager, HOLIDAY_THEMES, getActiveHoliday, VALID_DAYS, VALID_CLASS_TYPES, SCHEDULE_STORAGE_KEY, SYNCED_SCHEDULE_FILE, DISPLAY_MODES, DISPLAY_MODE_LABELS, DISPLAY_MODE_STORAGE_KEY, nextDisplayMode, DisplaySyncManager, SYNC_SECTION_IDS, SYNC_ATTR_IDS, buildSyncSnapshot, applySyncSnapshot, syncElementFromHtml, HOLD_MS, TRAINING_MENU_ITEMS, moveSelection, stepNumericBuffer, STRINGS, LANGUAGES, t, setLanguage, applyStaticTranslations, presetDisplayName, classDisplayName, CLASS_TITLES, TetrisGame, TETRIS_COLS, TETRIS_ROWS };
 }
 
 // --- Application Initialization ---
