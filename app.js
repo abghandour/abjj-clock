@@ -2636,8 +2636,13 @@ class InputHandler {
     this._dualEngine = null;
     this._dualRendererEls = null;
     this.overlayManager._dualTimerCallback = () => this._activateDualMode();
+    // A release that lands in another window (or after the page is hidden)
+    // never reaches us, so the pending hold must not fire on its own.
+    this._onFocusLost = () => this._cancelHold();
     document.addEventListener('keydown', this._onKeyDown);
     document.addEventListener('keyup', this._onKeyUp);
+    window.addEventListener('blur', this._onFocusLost);
+    document.addEventListener('visibilitychange', this._onFocusLost);
   }
 
   /**
@@ -3464,6 +3469,7 @@ class InputHandler {
     return c.roundDurationSec === def.roundDurationSec &&
       c.restDurationSec === def.restDurationSec &&
       c.numRounds === def.numRounds &&
+      c.prepDurationSec === (def.prepDurationSec ?? DEFAULT_CONFIG.prepDurationSec) &&
       (this.state._presetName || null) === (def.presetName || null);
   }
 
@@ -3608,8 +3614,11 @@ class InputHandler {
   }
 
   destroy() {
+    this._cancelHold();
     document.removeEventListener('keydown', this._onKeyDown);
     document.removeEventListener('keyup', this._onKeyUp);
+    window.removeEventListener('blur', this._onFocusLost);
+    document.removeEventListener('visibilitychange', this._onFocusLost);
   }
 }
 
@@ -4502,6 +4511,7 @@ function applySyncSnapshot(doc, snap, applied) {
 class DisplaySyncManager {
   constructor() {
     this._sessionId = null;
+    this._seq = 0;
     this._lastPayload = '';
     this._lastSentAt = 0;
     this._pending = null;
@@ -4602,9 +4612,12 @@ class DisplaySyncManager {
   _broadcast(force) {
     const snapshot = buildSyncSnapshot(document, this._getMeta, this._sessionId);
     const comparison = JSON.stringify({ ...snapshot, sentAt: 0 });
-    const payload = JSON.stringify(snapshot);
     const now = Date.now();
     if (!force && comparison === this._lastPayload && now - this._lastSentAt < SYNC_HEARTBEAT_MS) return;
+    // POSTs run concurrently; the sequence number lets the server and the
+    // secondary drop a slow older snapshot that lands after a newer one.
+    snapshot.seq = ++this._seq;
+    const payload = JSON.stringify(snapshot);
     this._lastPayload = comparison;
     this._lastSentAt = now;
     fetch('http://localhost:3001/sync', {
@@ -4623,6 +4636,7 @@ class DisplaySyncManager {
     const status = document.getElementById('sync-status');
     let receivedAt = null;
     let hasConnected = false;
+    let lastSeen = null; // { sessionId, seq } of the newest snapshot applied
     const showStale = () => {
       const stale = hasConnected && (receivedAt === null || performance.now() - receivedAt >= SYNC_HEARTBEAT_MS * 2.5);
       if (status) status.hidden = !stale;
@@ -4638,6 +4652,8 @@ class DisplaySyncManager {
       try { snap = JSON.parse(e.data); } catch (err) { return; }
       if (!snap || typeof snap !== 'object' || !Number.isFinite(snap.sentAt) ||
           Math.abs(Date.now() - snap.sentAt) > SYNC_HEARTBEAT_MS * 2.5) return;
+      if (lastSeen && Number.isFinite(snap.seq) && snap.sessionId === lastSeen.sessionId && snap.seq < lastSeen.seq) return;
+      if (Number.isFinite(snap.seq)) lastSeen = { sessionId: snap.sessionId, seq: snap.seq };
       receivedAt = performance.now();
       hasConnected = true;
       onSnapshot(snap);
@@ -4669,6 +4685,9 @@ class DisplaySyncManager {
     const dataFor = (type, e) => ({ type, key: e.key, code: e.code, ctrlKey: e.ctrlKey, repeat: e.repeat });
     const down = (e) => {
       e.preventDefault();
+      // A different key mid-hold (e.g. Flirc's long-press key) cancels the
+      // pending gesture, mirroring the primary, so its release relays nothing.
+      if (enterDown !== null && !e.repeat && e.key !== enterKey) clearEnter();
       if (isHoldKey(e)) {
         if (!e.repeat && enterDown === null) { enterDown = performance.now(); enterKey = e.key; }
       } else relay(dataFor('keydown', e));
@@ -5229,7 +5248,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       const active = APP_SETTINGS.scheduleEnabled ? scheduleManager.getActiveClass(now) : null;
       const preset = active ? presetManager.getPreset(active.classType) : null;
       const src = preset || { ...DEFAULT_CONFIG };
-      return { ...src, presetName: active ? active.title : null };
+      return { ...src, prepDurationSec: src.prepDurationSec ?? DEFAULT_CONFIG.prepDurationSec, presetName: active ? active.title : null };
     };
     inputHandler._defaultConfigCallback = defaultConfig;
     inputHandler._resetCallback = () => {
@@ -5237,6 +5256,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       state.config.roundDurationSec = src.roundDurationSec;
       state.config.restDurationSec = src.restDurationSec;
       state.config.numRounds = src.numRounds;
+      state.config.prepDurationSec = src.prepDurationSec;
       state.remainingSec = src.roundDurationSec;
       state._presetName = src.presetName;
       StorageManager.save(state.config);

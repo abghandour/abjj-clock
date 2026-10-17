@@ -178,6 +178,48 @@ describe('update server', () => {
     sub.close();
   });
 
+  it('decodes a multi-byte character split across request chunks', async () => {
+    const headers = { 'X-Update-Request': '1' };
+    const sub = await subscribe(port, '/sync-events');
+    const bytes = Buffer.from('{"title":"a — b"}', 'utf8');
+    const cut = bytes.indexOf(Buffer.from('—', 'utf8')) + 1; // split inside the em dash
+    if (typeof port === 'object') {
+      await new Promise(resolve => {
+        const { req } = dispatch(port, 'POST', '/sync', headers, () => {}, resolve);
+        req.emit('data', bytes.subarray(0, cut));
+        req.emit('data', bytes.subarray(cut));
+        req.emit('end');
+      });
+    } else {
+      await new Promise((resolve, reject) => {
+        const req = http.request({ host: '127.0.0.1', port, method: 'POST', path: '/sync', headers }, res => { res.resume(); res.on('end', resolve); });
+        req.on('error', reject);
+        req.write(bytes.subarray(0, cut));
+        setTimeout(() => { req.write(bytes.subarray(cut)); req.end(); }, 20);
+      });
+    }
+    expect(JSON.parse(await sub.next())).toEqual({ title: 'a — b' });
+    sub.close();
+  });
+
+  it('keeps the newest snapshot when an older one from the same session lands later', async () => {
+    const headers = { 'X-Update-Request': '1' };
+    const sub = await subscribe(port, '/sync-events');
+    await request(port, 'POST', '/sync', { headers, body: JSON.stringify({ sessionId: 's1', seq: 2, state: 'paused' }) });
+    expect(JSON.parse(await sub.next())).toMatchObject({ seq: 2 });
+    const stale = await request(port, 'POST', '/sync', { headers, body: JSON.stringify({ sessionId: 's1', seq: 1, state: 'running' }) });
+    expect(JSON.parse(stale.body)).toEqual({ success: true, stale: true });
+    await request(port, 'POST', '/sync', { headers, body: JSON.stringify({ sessionId: 's1', seq: 3 }) });
+    expect(JSON.parse(await sub.next())).toMatchObject({ seq: 3 }); // seq 1 was never published
+    // A new primary session restarts numbering and is accepted.
+    await request(port, 'POST', '/sync', { headers, body: JSON.stringify({ sessionId: 's2', seq: 1 }) });
+    expect(JSON.parse(await sub.next())).toMatchObject({ sessionId: 's2', seq: 1 });
+    sub.close();
+    const late = await subscribe(port, '/sync-events');
+    expect(JSON.parse(await late.next())).toMatchObject({ sessionId: 's2', seq: 1 }); // retained copy
+    late.close();
+  });
+
   it('runs git pull in the repo directory and reports its output', async () => {
     const res = await request(port, 'POST', '/update', { headers: { 'X-Update-Request': '1' } });
     expect(res.status).toBe(200);

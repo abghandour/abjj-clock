@@ -1058,6 +1058,7 @@ describe('DisplaySyncManager primary', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.sections['status-bar']).toBeDefined();
+    expect(body.seq).toBe(1);
     expect(fetchMock.mock.calls[0][1].headers['X-Update-Request']).toBe('1');
 
     // A quiet second: no traffic
@@ -1326,6 +1327,29 @@ describe('secondary connection and input lifecycle', () => {
     removeWindow.mockRestore();
     removeDocument.mockRestore();
   });
+
+  it('a different key arriving mid-hold cancels the pending gesture so its release relays nothing', async () => {
+    sync.startSecondary(() => {});
+    keydown(' ');
+    vi.advanceTimersByTime(400);
+    press('0'); // Flirc's hold-▶ key
+    keyup(' ');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetch.mock.calls.map(call => JSON.parse(call[1].body).type)).toEqual(['keydown', 'keyup']);
+    press(' '); // the next tap is relayed normally
+    await vi.advanceTimersByTimeAsync(0);
+    expect(JSON.parse(fetch.mock.lastCall[1].body)).toMatchObject({ type: 'press', key: ' ' });
+  });
+
+  it('ignores a snapshot older than the newest one from the same session', () => {
+    const received = vi.fn();
+    sync.startSecondary(received);
+    stream.onmessage({ data: JSON.stringify({ sessionId: 'a', seq: 2, sentAt: Date.now() }) });
+    stream.onmessage({ data: JSON.stringify({ sessionId: 'a', seq: 1, sentAt: Date.now() }) });
+    expect(received).toHaveBeenCalledTimes(1);
+    stream.onmessage({ data: JSON.stringify({ sessionId: 'b', seq: 1, sentAt: Date.now() }) }); // new primary session
+    expect(received).toHaveBeenCalledTimes(2);
+  });
 });
 
 // ─── Apple Remote (via Flirc) vocabulary ───
@@ -1361,7 +1385,7 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     vi.useRealTimers();
   });
 
-  const FIXTURE_DEFAULTS = { roundDurationSec: 5, restDurationSec: 2, numRounds: 0 };
+  const FIXTURE_DEFAULTS = { roundDurationSec: 5, restDurationSec: 2, numRounds: 0, prepDurationSec: 0 };
   const overlayEl = () => document.getElementById('overlay');
   const selectedName = () => overlayEl().querySelector('.mg-name.mg-sel').textContent;
 
@@ -1661,5 +1685,43 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     expect(state.config.roundDurationSec).toBe(FIXTURE_DEFAULTS.roundDurationSec);
     press('Escape');
     expect(names()[0]).toBe('Training');
+  });
+
+  it('a changed preparation countdown shows the Reset row and Reset clears it', () => {
+    const names = () => Array.from(overlayEl().querySelectorAll('.mg-name')).map(el => el.textContent);
+    state.config.prepDurationSec = 10;
+    press('Escape');
+    expect(names()[0]).toBe('Reset');
+    press('Enter');
+    expect(overlay.isOpen()).toBe(false);
+    expect(state.config.prepDurationSec).toBe(0);
+    press('Escape');
+    expect(names()[0]).toBe('Training');
+  });
+
+  it.each(['blur', 'visibilitychange'])('a hold interrupted by %s never fires', event => {
+    press(' ');
+    press(' ');
+    expect(state.phase).toBe(PHASES.ROUND);
+    keydown('Escape');
+    vi.advanceTimersByTime(300);
+    (event === 'blur' ? window : document).dispatchEvent(new Event(event));
+    vi.advanceTimersByTime(HOLD_MS * 2);
+    expect(state.phase).toBe(PHASES.ROUND); // no reset
+    keyup('Escape'); // release after focus returns is not a Menu tap either
+    expect(overlay.isOpen()).toBe(false);
+    expect(state.phase).toBe(PHASES.ROUND);
+    press('Escape'); // the next gesture works normally
+    expect(overlay.isOpen()).toBe(true);
+  });
+
+  it('destroy() drops a pending hold instead of firing it later', () => {
+    press(' ');
+    press(' ');
+    keydown('Escape');
+    input.destroy();
+    vi.advanceTimersByTime(HOLD_MS * 2);
+    expect(state.phase).toBe(PHASES.ROUND);
+    input = new InputHandler(engine, overlay, renderer, audio, state); // afterEach destroys this one
   });
 });

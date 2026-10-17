@@ -51,7 +51,7 @@ function createUpdateServer(options) {
   const log = opts.log || ((msg) => console.log(`[${new Date().toISOString()}] ${msg}`));
 
   const channels = {
-    sync: { retain: true, last: null, clients: new Set() },
+    sync: { retain: true, last: null, lastSeq: null, clients: new Set() },
     keys: { retain: false, last: null, clients: new Set() },
   };
 
@@ -76,31 +76,47 @@ function createUpdateServer(options) {
   }
 
   function readBody(req, callback) {
-    let body = '';
+    // Collect raw bytes and decode once: a multi-byte UTF-8 character split
+    // across chunks would otherwise decode to replacement characters.
+    const chunks = [];
+    let size = 0;
     let tooLarge = false;
     req.on('data', (chunk) => {
-      body += chunk;
-      if (body.length > MAX_BODY_BYTES) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      chunks.push(buf);
+      size += buf.length;
+      if (size > MAX_BODY_BYTES) {
         tooLarge = true;
         req.destroy();
       }
     });
-    req.on('end', () => { if (!tooLarge) callback(body); });
+    req.on('end', () => { if (!tooLarge) callback(Buffer.concat(chunks).toString('utf8')); });
     req.on('error', () => {});
   }
 
   function ssePublish(channel, req, res) {
     readBody(req, (body) => {
       // Parse and reserialize to prevent newline/SSE-frame injection.
+      let data;
       try {
-        const data = JSON.parse(body);
+        data = JSON.parse(body);
         if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid payload');
         body = JSON.stringify(data);
       } catch (e) {
         json(res, 400, { success: false, error: 'Invalid JSON object' });
         return;
       }
-      if (channel.retain) channel.last = body;
+      if (channel.retain) {
+        // Concurrent POSTs can finish out of order; a snapshot older than the
+        // retained one (same session, lower seq) must not replace it.
+        const prev = channel.lastSeq;
+        if (prev && Number.isFinite(data.seq) && data.sessionId === prev.sessionId && data.seq < prev.seq) {
+          json(res, 200, { success: true, stale: true });
+          return;
+        }
+        if (Number.isFinite(data.seq)) channel.lastSeq = { sessionId: data.sessionId, seq: data.seq };
+        channel.last = body;
+      }
       for (const client of channel.clients) {
         try {
           client.write(`data: ${body}\n\n`);
