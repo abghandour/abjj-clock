@@ -2059,6 +2059,25 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     expect(bar().textContent).toContain('Paused');
   });
 
+  it('a repeated notice after resuming restores the running label', () => {
+    startRunning();
+    const runningLabel = bar().innerHTML;
+    press(' ');
+    expect(bar().textContent).toContain('Paused');
+    press('ArrowUp');
+    expect(bar().textContent).toBe('Stop first · hold ▶');
+    vi.advanceTimersByTime(500);
+    press(' ');
+    expect(state.paused).toBe(false);
+    expect(bar().innerHTML).toBe(runningLabel);
+    press('ArrowDown');
+    expect(bar().textContent).toBe('Stop first · hold ▶');
+    vi.advanceTimersByTime(2000);
+    expect(state.phase).toBe(PHASES.ROUND);
+    expect(state.paused).toBe(false);
+    expect(bar().innerHTML).toBe(runningLabel);
+  });
+
   it('a notice does not overwrite a state reached before it times out', () => {
     startRunning();
     press('ArrowUp');
