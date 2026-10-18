@@ -25,11 +25,18 @@ keystroke, so a keyboard works the same way and no driver is needed on the Pi.
 
 | Button | Tap | Hold |
 | --- | --- | --- |
-| ▶⏸ | ready → start → pause → resume | stop (back to ready) |
-| OK (center) | same as ▶ outside menus; select in menus; start in editing | reset to defaults |
-| Menu | open the main menu; back / close; cancel editing | reset to defaults |
+| ▶⏸ | ready → start → pause → resume; save and start in editing | stop (back to ready); from ready, back to the clock face |
+| OK (center) | same as ▶ outside menus; select in menus; save in editing (back to ready) | stop (back to ready); reset to defaults when idle |
+| Menu | open the main menu; back / close; cancel editing | stop (back to ready); reset to defaults when idle |
 | Ring ▲▼ | enter editing and adjust the value; move the highlight in menus | adjust by ×5 |
 | Ring ◀▶ | next / previous field in editing | — |
+
+Settings are edited only while no timer is running or paused. The ring never
+touches a live round: it shows "Stop first · hold ▶" for two seconds instead.
+With a Pyramid, Ladder or Chainsaw preset loaded, the ring shows "Preset · Menu
+→ Restore defaults to edit". A class that starts while the editor is open
+waits, as it does while a timer runs: it applies if the edit is cancelled, and
+a saved edit wins over it.
 
 While idle the main menu is ordered by how often each row is used: Training,
 Competition, Restore defaults (only when the app is not in its default state:
@@ -49,9 +56,9 @@ display; each closes the menu.
 
 A state label under the timers names the states that look alike from the mat:
 **Ready**, **Paused** (with a distinct resume sound), **Finished** when the
-rounds run out, and **Editing <field>** with the one control line that applies
-(◀▶ field · ▲▼ adjust · ▶ start · Menu cancel; while a timer runs, ▲▼ stops it
-and restarts fresh). Running and idle show no label. The final ten seconds turn
+rounds run out, and **Editing <field>** with its controls (◀▶ field · ▲▼
+adjust · OK save · ▶ start · Menu cancel). Ready and Finished also name the way
+back to the clock face (hold ▶). Running and idle show no label. The final ten seconds turn
 the counting box yellow with black digits, and during rest the rest box takes
 the large slot.
 

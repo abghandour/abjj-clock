@@ -254,8 +254,9 @@ const STRINGS = {
     'chainsaw.evenRest': 'Even round rest:', 'chainsaw.rounds': 'How many rounds:', 'chainsaw.needDuration': 'Round needs a duration',
     'chainsaw.enterNumber': 'Enter a number', 'chainsaw.min1round': 'Need at least 1 round',
     'state.ready': 'Ready', 'state.paused': '❚❚ Paused', 'state.finished': 'Finished', 'state.editing': 'Editing', 'state.editingField': 'Editing {field}',
-    'hint.ready': '▶ start · ring edits', 'hint.paused': '▶ resume · Menu options', 'hint.finished': '▶ start again · Menu options',
-    'hint.editRunning': '◀▶ field · ▲▼ edit & restart · Menu cancel', 'hint.edit': '◀▶ field · ▲▼ adjust · ▶ start · Menu cancel',
+    'hint.ready': '▶ start · ring edits · hold ▶ clock', 'hint.paused': '▶ resume · Menu options', 'hint.finished': '▶ start again · Menu options · hold ▶ clock',
+    'hint.edit': '◀▶ field · ▲▼ adjust\nOK save · ▶ start · Menu cancel',
+    'notice.stopFirst': 'Stop first · hold ▶', 'notice.presetLocked': 'Preset · Menu → Restore defaults to edit',
     'field.round-min': 'round minutes', 'field.round-sec': 'round seconds', 'field.rest-min': 'rest minutes',
     'field.rest-sec': 'rest seconds', 'field.rounds': 'rounds', 'field.timer2': 'timer 2 {field}',
     'list.now': 'Now R{n} · {t}', 'list.next': 'Next R{n} · {t}', 'list.last': 'Last round', 'list.overtime': '{n}m overtime',
@@ -314,8 +315,9 @@ const STRINGS = {
     'chainsaw.evenRest': 'Descanso das rodadas pares:', 'chainsaw.rounds': 'Quantas rodadas:', 'chainsaw.needDuration': 'A rodada precisa de duração',
     'chainsaw.enterNumber': 'Digite um número', 'chainsaw.min1round': 'Mínimo de 1 rodada',
     'state.ready': 'Pronto', 'state.paused': '❚❚ Pausado', 'state.finished': 'Concluído', 'state.editing': 'Editando', 'state.editingField': 'Editando {field}',
-    'hint.ready': '▶ iniciar · anel edita', 'hint.paused': '▶ retomar · Menu opções', 'hint.finished': '▶ reiniciar · Menu opções',
-    'hint.editRunning': '◀▶ campo · ▲▼ editar e reiniciar · Menu cancelar', 'hint.edit': '◀▶ campo · ▲▼ ajustar · ▶ iniciar · Menu cancelar',
+    'hint.ready': '▶ iniciar · anel edita · segure ▶ relógio', 'hint.paused': '▶ retomar · Menu opções', 'hint.finished': '▶ reiniciar · Menu opções · segure ▶ relógio',
+    'hint.edit': '◀▶ campo · ▲▼ ajustar\nOK salvar · ▶ iniciar · Menu cancelar',
+    'notice.stopFirst': 'Pare primeiro · segure ▶', 'notice.presetLocked': 'Predefinição · Menu → Restaurar padrões para editar',
     'field.round-min': 'minutos da rodada', 'field.round-sec': 'segundos da rodada', 'field.rest-min': 'minutos do descanso',
     'field.rest-sec': 'segundos do descanso', 'field.rounds': 'rodadas', 'field.timer2': 'cronômetro 2, {field}',
     'list.now': 'Agora R{n} · {t}', 'list.next': 'Próximo R{n} · {t}', 'list.last': 'Última rodada', 'list.overtime': '{n} min além',
@@ -1187,6 +1189,8 @@ const TRAINING_MODES = {
 
 // Hold duration (ms) that turns a tap on ▶ / OK / Menu into a long press
 const HOLD_MS = 800;
+// How long a state-label notice (e.g. "Stop first") stays up
+const NOTICE_MS = 2000;
 
 // Rounds assumed when a training preset's rounds prompt is confirmed empty
 const TRAINING_DEFAULT_ROUNDS = 4;
@@ -1497,9 +1501,10 @@ class Renderer {
   /**
    * State label under the timers. Names the states that otherwise look alike
    * from across the mat (Ready / Paused / Finished) and, while editing, the
-   * one control line a coach needs. Running and idle show nothing.
-   * @param {'clock'|'ready'|'running'|'paused'|'finished'|'editing'|'menu'|'training'|'competition'|'hidden'} mode
-   * @param {{field?: string, running?: boolean}} [detail] - Editing: field name and whether a session is live
+   * control lines a coach needs. Running and idle show nothing. A notice is a
+   * short message the input handler shows for a moment, then restores.
+   * @param {'clock'|'ready'|'running'|'paused'|'finished'|'editing'|'notice'|'menu'|'training'|'competition'|'hidden'} mode
+   * @param {{field?: string, text?: string}} [detail] - Editing: field name; notice: the message
    */
   updateStatusBar(mode, detail) {
     if (!this.statusBarEl) return;
@@ -1513,8 +1518,9 @@ class Renderer {
     else if (mode === 'finished') html = row('sb-finished', t('state.finished'), t('hint.finished'));
     else if (mode === 'editing') {
       const field = detail && detail.field ? t('state.editingField', { field: escapeHtml(detail.field) }) : t('state.editing');
-      const hint = detail && detail.running ? t('hint.editRunning') : t('hint.edit');
-      html = row('sb-editing', field, hint);
+      html = row('sb-editing', field, t('hint.edit'));
+    } else if (mode === 'notice') {
+      html = `<span class="sb-state sb-notice">${escapeHtml(detail.text)}</span>`;
     }
     this._lastStatus = { mode, detail };
     if (this.statusBarEl.innerHTML !== html) this.statusBarEl.innerHTML = html;
@@ -3549,15 +3555,15 @@ class InputHandler {
       return;
     }
 
-    // Ring enters time-setting mode (any phase — a running timer keeps
-    // ticking until the user adjusts a value)
+    // Ring enters time-setting mode, only while nothing is running or paused:
+    // a live round is never edited or stopped by the ring
     if (effectiveKey === 'ArrowUp' || effectiveKey === 'ArrowDown' || effectiveKey === 'ArrowLeft' || effectiveKey === 'ArrowRight' ||
         effectiveKey === 'StepUp' || effectiveKey === 'StepDown') {
-      // Block if a training/competition preset with custom round durations is active
-      // (user must reset — hold Menu / long-press OK — first)
-      if (this.state.roundDurations) return;
       event.preventDefault();
-      this._enterTimeSetting();
+      if (this._sessionLive()) this._showNotice('notice.stopFirst');
+      // A preset with per-round durations has no single value to edit
+      else if (this.state.roundDurations) this._showNotice('notice.presetLocked');
+      else this._enterTimeSetting();
       return;
     }
 
@@ -3770,42 +3776,24 @@ class InputHandler {
     document.body.classList.remove('time-setting');
     const bar = document.getElementById('edit-instruction-bar');
     if (bar) { bar.classList.remove('active'); bar.innerHTML = ''; }
-    const dualActive = this._dualMode && this._dualEngine && this._dualState &&
-      this._dualState.phase !== PHASES.IDLE;
-    if (this.state.phase !== PHASES.IDLE || dualActive) {
-      const paused = this.state.paused || (dualActive && this._dualState.paused);
-      this.renderer.updateStatusBar(paused ? 'paused' : 'running');
-    } else {
-      this.renderer.updateStatusBar(this._ready ? 'ready' : 'clock');
-    }
+    this._restoreStatusBar();
   }
 
   /**
    * Render the timer display with span-wrapped digit groups for selective blinking.
    */
   _renderTimeSettingDisplay() {
-    // While a session is running (or paused), leave the displayed values
-    // untouched — the timer keeps going as usual and only the blink highlight
-    // marks the selected field. Values render once +/- stops the session.
-    const dualActive = this._dualMode && this._dualEngine && this._dualState &&
-      this._dualState.phase !== PHASES.IDLE;
-    const sessionActive = this.state.phase !== PHASES.IDLE || dualActive;
-
-    if (!sessionActive) {
-      this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
-      this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
-      this.renderer.updateRoundCounter(0, this.state.config.numRounds);
-    }
+    this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
+    this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
+    this.renderer.updateRoundCounter(0, this.state.config.numRounds);
 
     this.renderer.roundTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
     this.renderer.restTimerEl.classList.remove('time-setting-minutes', 'time-setting-seconds');
     if (this.renderer.roundCounterEl) this.renderer.roundCounterEl.classList.remove('time-setting-active');
 
     if (this._dualMode && this._dualState && this._dualRendererEls) {
-      if (!sessionActive) {
-        this._updateTimer2Display(this._dualRendererEls.roundTimerEl, this._dualState.config.roundDurationSec, false);
-        this._updateTimer2Display(this._dualRendererEls.restTimerEl, this._dualState.config.restDurationSec, false);
-      }
+      this._updateTimer2Display(this._dualRendererEls.roundTimerEl, this._dualState.config.roundDurationSec, false);
+      this._updateTimer2Display(this._dualRendererEls.restTimerEl, this._dualState.config.restDurationSec, false);
       const rt2 = this._dualRendererEls.roundTimerEl;
       const xt2 = this._dualRendererEls.restTimerEl;
       if (rt2) rt2.classList.remove('time-setting-minutes', 'time-setting-seconds');
@@ -3841,10 +3829,7 @@ class InputHandler {
     const base = f.startsWith('t2-') ? f.slice(3) : f;
     const name = base ? t('field.' + base) : '';
     const field = f.startsWith('t2-') ? t('field.timer2', { field: name }) : name;
-    const dualActive = this._dualMode && this._dualEngine && this._dualState &&
-      this._dualState.phase !== PHASES.IDLE;
-    const running = this.state.phase !== PHASES.IDLE || dualActive;
-    this.renderer.updateStatusBar('editing', { field: field.trim(), running });
+    this.renderer.updateStatusBar('editing', { field: field.trim() });
   }
 
   /**
@@ -3869,11 +3854,10 @@ class InputHandler {
       return;
     }
 
-    if (key === 'Play') key = 'Enter'; // ▶ confirms and starts, like OK
     if (key === 'Menu') key = '0'; // Menu cancels, like 0
 
     if (key === '0') {
-      // Cancel: revert any adjustments and leave a running timer untouched
+      // Cancel: revert any adjustments
       const snap = this._timeSettingSnapshot;
       if (snap) {
         this.state.config = { ...snap.config };
@@ -3883,63 +3867,41 @@ class InputHandler {
         this.state._presetName = snap.presetName;
         this.renderer.updatePresetLabel(snap.presetName);
       }
-      const cancelDualActive = this._dualMode && this._dualEngine && this._dualState &&
-        this._dualState.phase !== PHASES.IDLE;
-      if (this.state.phase === PHASES.IDLE) {
-        this.state.remainingSec = this.state.config.roundDurationSec;
-      }
-      if (this._dualMode && this._dualState && this._dualState.phase === PHASES.IDLE) {
-        this._dualState.remainingSec = this._dualState.config.roundDurationSec;
-      }
+      this.state.remainingSec = this.state.config.roundDurationSec;
+      if (this._dualState) this._dualState.remainingSec = this._dualState.config.roundDurationSec;
       this._exitTimeSetting();
-      if (this.state.phase !== PHASES.IDLE || cancelDualActive) {
-        this._refreshTimerDisplay();
-      } else {
-        this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
-        this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
-        this.renderer.updateRoundCounter(0, this.state.config.numRounds);
-        if (this._dualMode && this._dualState && this._dualRendererEls) {
-          this._updateTimer2Display(this._dualRendererEls.roundTimerEl, this._dualState.config.roundDurationSec, false);
-          this._updateTimer2Display(this._dualRendererEls.restTimerEl, this._dualState.config.restDurationSec, false);
-        }
+      this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
+      this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
+      this.renderer.updateRoundCounter(0, this.state.config.numRounds);
+      if (this._dualMode && this._dualState && this._dualRendererEls) {
+        this._updateTimer2Display(this._dualRendererEls.roundTimerEl, this._dualState.config.roundDurationSec, false);
+        this._updateTimer2Display(this._dualRendererEls.restTimerEl, this._dualState.config.restDurationSec, false);
       }
+      if (this._onTimeSettingClosed) this._onTimeSettingClosed(false);
       return;
     }
 
-    if (key === 'Enter' || key === '*' || key === '/') {
+    // Save: OK goes to Ready, ▶ starts, * and / open the preset menus
+    if (key === 'Enter' || key === 'Play' || key === '*' || key === '/') {
       StorageManager.save(this.state.config);
-      const dualActive = this._dualMode && this._dualEngine && this._dualState &&
-        this._dualState.phase !== PHASES.IDLE;
-      const sessionActive = this.state.phase !== PHASES.IDLE || dualActive;
-      // Only reset remaining time when idle — a running/paused timer keeps its
-      // in-flight countdown
-      if (this.state.phase === PHASES.IDLE) {
-        this.state.remainingSec = this.state.config.roundDurationSec;
-      }
-      if (this._dualMode && this._dualState && this._dualState.phase === PHASES.IDLE) {
-        this._dualState.remainingSec = this._dualState.config.roundDurationSec;
+      this.state.remainingSec = this.state.config.roundDurationSec;
+      if (this._dualState) this._dualState.remainingSec = this._dualState.config.roundDurationSec;
+      const start = key === 'Play' && this.state.config.roundDurationSec > 0;
+      if (key === 'Enter' || key === 'Play') {
+        this._ready = true;
+        document.body.classList.remove('timer-idle');
       }
       this._exitTimeSetting();
+      if (this._onTimeSettingClosed) this._onTimeSettingClosed(true);
 
-      if (sessionActive) {
-        // Timer kept running while editing — restore the live display and skip
-        // ready-state/menu handling
+      if (start) {
+        this._ready = false;
+        this.engine.start();
+        if (this._dualMode && this._dualEngine) this._dualEngine.start();
         this._refreshTimerDisplay();
-        return;
-      }
-
-      if (key === 'Enter') {
-        if (this.state.config.roundDurationSec === 0) {
-          this.audioManager.playMuffle();
-        } else {
-          // Start the timer immediately with the freshly set values
-          this._ready = false;
-          document.body.classList.remove('timer-idle');
-          this.engine.start();
-          if (this._dualMode && this._dualEngine) this._dualEngine.start();
-          this._refreshTimerDisplay();
-          this.renderer.updateStatusBar('running');
-        }
+        this.renderer.updateStatusBar('running');
+      } else if (key === 'Play') {
+        this.audioManager.playMuffle(); // a 0:00 round can't start
       } else if (key === '*') {
         this.overlayManager.showTrainingMenu({ ...this.state.config }, (updatedConfig) => {
           this._applyMenuConfig(updatedConfig);
@@ -3956,38 +3918,11 @@ class InputHandler {
   }
 
   /**
-   * Stop a running (or paused) session because the user changed a setting
-   * while in time-setting mode. Leaves the app in the ready state and keeps
-   * time-setting mode active. No-op when nothing is running.
-   */
-  _stopIfRunning() {
-    const dualActive = this._dualMode && this._dualEngine && this._dualState &&
-      this._dualState.phase !== PHASES.IDLE;
-    if (this.state.phase === PHASES.IDLE && !dualActive) return;
-    if (this.state.paused || (dualActive && this._dualState.paused)) {
-      this.renderer.hidePauseOverlay();
-    }
-    if (this.state.phase !== PHASES.IDLE) {
-      this.state._cancelledByUser = true;
-      this.engine.stop();
-    }
-    if (dualActive) {
-      this._dualState._cancelledByUser = true;
-      this._dualEngine.stop();
-    }
-    this.audioManager.playCancel();
-    this._ready = true;
-    document.body.classList.remove('timer-idle');
-    this._updateTimeSettingBar();
-  }
-
-  /**
    * Adjust the value of the currently selected time-setting field.
    * @param {number} direction - +1 or -1
    * @param {boolean} [big] - Held ring: minutes ±5, seconds ±15, rounds ±5
    */
   _adjustTimeSettingValue(direction, big) {
-    this._stopIfRunning();
     const field = this._timeSettingField;
 
     // Rounds adjustment
@@ -4142,7 +4077,34 @@ class InputHandler {
   /** @private */
   _handleHold(key) {
     if (key === 'Play') this._handleZeroPress(); // hold ▶ = stop
-    else this._handleEnterLongPress(); // hold OK / Menu = reset (or stop while running)
+    else this._handleEnterLongPress(); // hold OK / Menu = reset (or stop to Ready while running)
+  }
+
+  /** True while either timer is running or paused. */
+  _sessionLive() {
+    return this.state.phase !== PHASES.IDLE ||
+      !!(this._dualMode && this._dualEngine && this._dualState && this._dualState.phase !== PHASES.IDLE);
+  }
+
+  /**
+   * Show a short message in the state label for two seconds, then put back
+   * the label it replaced, unless something else has changed the label since.
+   * @param {string} key - STRINGS key
+   * @private
+   */
+  _showNotice(key) {
+    const last = this.renderer._lastStatus;
+    if (!this._noticeTimer) this._noticeRestore = last && last.mode !== 'notice' ? last : null;
+    clearTimeout(this._noticeTimer);
+    this.renderer.updateStatusBar('notice', { text: t(key) });
+    this._noticeTimer = setTimeout(() => {
+      this._noticeTimer = null;
+      const now = this.renderer._lastStatus;
+      if (!now || now.mode !== 'notice') return;
+      const prev = this._noticeRestore;
+      if (prev) this.renderer.updateStatusBar(prev.mode, prev.detail);
+      else this._restoreStatusBar();
+    }, NOTICE_MS);
   }
 
   /**
@@ -4314,34 +4276,8 @@ class InputHandler {
   _handleZeroPress() {
     if (this.overlayManager.isOpen()) return;
 
-    const dualActive = this._dualMode && this._dualEngine && this._dualState &&
-      this._dualState.phase !== PHASES.IDLE;
-    if (this.state.phase !== PHASES.IDLE || dualActive) {
-      // Running or paused → stop but stay in ready state (enlarged).
-      // Timer 2 may still be running after Timer 1 finished its rounds — stop it too.
-      if (this.state.paused || (dualActive && this._dualState.paused)) {
-        this.renderer.hidePauseOverlay();
-      }
-      if (this.state.phase !== PHASES.IDLE) {
-        this.state._cancelledByUser = true;
-        this.engine.stop();
-      }
-      if (dualActive) {
-        this._dualState._cancelledByUser = true;
-        this._dualEngine.stop();
-      }
-      this.audioManager.playCancel();
-      const rd = this.state.roundDurations;
-      this.renderer.updateRoundDisplay(rd ? rd[0] : this.state.config.roundDurationSec, false);
-      this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
-      this.renderer.updateRoundCounter(0, rd ? rd.length : this.state.config.numRounds);
-      this._ready = true;
-      document.body.classList.remove('timer-idle');
-      this.renderer.updateStatusBar('ready');
-      if (this._dualMode && this._dualRendererEls) {
-        this._updateTimer2Display(this._dualRendererEls.roundTimerEl, this._dualState.config.roundDurationSec, false);
-        this._updateTimer2Display(this._dualRendererEls.restTimerEl, this._dualState.config.restDurationSec, false);
-      }
+    if (this._sessionLive()) {
+      this._stopToReady();
     } else if (this._ready) {
       // Ready state → go back to default (shrunk)
       this._ready = false;
@@ -4351,6 +4287,40 @@ class InputHandler {
     } else {
       // Already in default state → full reset (same as long-press Enter)
       this._handleEnterLongPress();
+    }
+  }
+
+  /**
+   * Stop a running or paused session and stay in the ready state (enlarged)
+   * with the same settings. Every stop gesture lands here.
+   * @private
+   */
+  _stopToReady() {
+    const dualActive = this._dualMode && this._dualEngine && this._dualState &&
+      this._dualState.phase !== PHASES.IDLE;
+    // Timer 2 may still be running after Timer 1 finished its rounds — stop it too.
+    if (this.state.paused || (dualActive && this._dualState.paused)) {
+      this.renderer.hidePauseOverlay();
+    }
+    if (this.state.phase !== PHASES.IDLE) {
+      this.state._cancelledByUser = true;
+      this.engine.stop();
+    }
+    if (dualActive) {
+      this._dualState._cancelledByUser = true;
+      this._dualEngine.stop();
+    }
+    this.audioManager.playCancel();
+    const rd = this.state.roundDurations;
+    this.renderer.updateRoundDisplay(rd ? rd[0] : this.state.config.roundDurationSec, false);
+    this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
+    this.renderer.updateRoundCounter(0, rd ? rd.length : this.state.config.numRounds);
+    this._ready = true;
+    document.body.classList.remove('timer-idle');
+    this.renderer.updateStatusBar('ready');
+    if (this._dualMode && this._dualRendererEls) {
+      this._updateTimer2Display(this._dualRendererEls.roundTimerEl, this._dualState.config.roundDurationSec, false);
+      this._updateTimer2Display(this._dualRendererEls.restTimerEl, this._dualState.config.restDurationSec, false);
     }
   }
 
@@ -4397,11 +4367,11 @@ class InputHandler {
   }
 
   /**
-   * Long press Enter: reset (when idle) or cancel/stop (when running/paused).
+   * Long press Enter: reset (when idle) or stop to Ready (when running/paused).
    */
   _handleEnterLongPress() {
     if (this.overlayManager.isOpen()) return;
-    if (this.state.phase === PHASES.IDLE) {
+    if (!this._sessionLive()) {
       // Reset ready state
       this._ready = false;
       document.body.classList.add('timer-idle');
@@ -4430,26 +4400,13 @@ class InputHandler {
       this.renderer.hidePauseOverlay();
       this.audioManager.playCancel();
     } else {
-      // Same as Stop (key 0)
-      if (this.state.paused || (this._dualMode && this._dualState && this._dualState.paused)) {
-        this.renderer.hidePauseOverlay();
-      }
-      this.state._cancelledByUser = true;
-      this.engine.stop();
-      if (this._dualMode && this._dualEngine && this._dualState.phase !== PHASES.IDLE) {
-        this._dualState._cancelledByUser = true;
-        this._dualEngine.stop();
-      }
-      this.audioManager.playCancel();
-      const rd = this.state.roundDurations;
-      this.renderer.updateRoundDisplay(rd ? rd[0] : this.state.config.roundDurationSec, false);
-      this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
-      this.renderer.updateRoundCounter(0, rd ? rd.length : this.state.config.numRounds);
+      this._stopToReady(); // same place as every other stop
     }
   }
 
   destroy() {
     this._cancelHold();
+    clearTimeout(this._noticeTimer);
     document.removeEventListener('keydown', this._onKeyDown);
     document.removeEventListener('keyup', this._onKeyUp);
     window.removeEventListener('blur', this._onFocusLost);
@@ -5746,6 +5703,31 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     let lastActiveClassKey = null; // Preserve ring identity across schedule toggles
     let _inputHandlerRef = null; // Set after InputHandler is created
 
+    /**
+     * Apply a class preset that arrived while the timer was busy (running,
+     * paused or being edited). Open Mat gets its preset but does not auto-start.
+     */
+    const applyPendingClass = () => {
+      if (!pendingClass) return;
+      const s = state;
+      const preset = pendingClass.classType === 'open_mat' ? APP_SETTINGS.competitionPresets['Blue Belt'] : presetManager.getPreset(pendingClass.classType);
+      if (preset) {
+        s.config.roundDurationSec = preset.roundDurationSec;
+        s.config.restDurationSec = preset.restDurationSec;
+        s.config.numRounds = preset.numRounds;
+        s.remainingSec = preset.roundDurationSec;
+        s.roundDurations = null;
+        s.restDurations = null;
+        s._presetName = pendingClass.title;
+        renderer.updatePresetLabel(s._presetName);
+        StorageManager.save(s.config);
+        renderer.updateRoundDisplay(s.config.roundDurationSec, false);
+        renderer.updateRestDisplay(s.config.restDurationSec, false);
+        renderer.updateRoundCounter(0, s.config.numRounds);
+      }
+      pendingClass = null;
+    };
+
     // 5. Create TimerEngine with tick and phase-change callbacks
     const engine = new TimerEngine(state,
       // onTick — update displays each second (the wall clock has its own
@@ -5797,24 +5779,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
           renderer.updateRoundCounter(0, rd ? rd.length : s.config.numRounds);
         }
         // When session stops and there's a pending class preset, apply it (Req 19.3, 19.4)
-        if (newPhase === PHASES.IDLE && pendingClass) {
-          const preset = pendingClass.classType === 'open_mat' ? APP_SETTINGS.competitionPresets['Blue Belt'] : presetManager.getPreset(pendingClass.classType);
-          if (preset) {
-            s.config.roundDurationSec = preset.roundDurationSec;
-            s.config.restDurationSec = preset.restDurationSec;
-            s.config.numRounds = preset.numRounds;
-            s.remainingSec = preset.roundDurationSec;
-            s.roundDurations = null;
-            s.restDurations = null;
-            s._presetName = pendingClass.title;
-            renderer.updatePresetLabel(s._presetName);
-            StorageManager.save(s.config);
-            renderer.updateRoundDisplay(s.config.roundDurationSec, false);
-            renderer.updateRestDisplay(s.config.restDurationSec, false);
-            renderer.updateRoundCounter(0, s.config.numRounds);
-          }
-          pendingClass = null;
-        }
+        if (newPhase === PHASES.IDLE) applyPendingClass();
         // Reset round list to preview when session ends (preserve if preset active)
         if (newPhase === PHASES.IDLE) {
           if (s.roundDurations) {
@@ -5823,11 +5788,8 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
             renderer.hideRoundList();
           }
         }
-        // Update status bar based on new phase (unless the user is mid-edit —
-        // time-setting mode stays active across phase changes)
-        if (_inputHandlerRef && _inputHandlerRef._timeSettingMode) {
-          _inputHandlerRef._updateTimeSettingBar();
-        } else if (newPhase === PHASES.IDLE) {
+        // Update status bar based on new phase
+        if (newPhase === PHASES.IDLE) {
           if (_inputHandlerRef && _inputHandlerRef._ready) {
             renderer.updateStatusBar('ready');
           } else {
@@ -5842,7 +5804,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
           document.body.classList.remove('timer-idle');
           if (_inputHandlerRef) _inputHandlerRef._ready = true;
           // Rounds ran out: say so, instead of looking like a restarted timer
-          if (!(_inputHandlerRef && _inputHandlerRef._timeSettingMode)) renderer.updateStatusBar('finished');
+          renderer.updateStatusBar('finished');
         } else {
           document.body.classList.toggle('timer-idle', newPhase === PHASES.IDLE && !state.paused);
         }
@@ -5991,7 +5953,9 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
           }
           lastActiveClassKey = activeClassKey;
           hadActiveClass = true;
-          if (state.phase === PHASES.IDLE) {
+          // The editor waits the class out like a running timer does, so
+          // the coach's values never change underneath them
+          if (state.phase === PHASES.IDLE && !inputHandler._timeSettingMode) {
             state.roundDurations = null;
             state.restDurations = null;
             renderer.hideRoundList();
@@ -6028,7 +5992,8 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
               renderer.updatePresetLabel(activeClass.title);
             }
           } else {
-            // Defer preset loading until session stops (Req 19.3)
+            // Defer preset loading until the session stops or the editor
+            // closes (Req 19.3)
             pendingClass = activeClass;
           }
         } else {
@@ -6114,6 +6079,12 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       return { ...src, prepDurationSec: src.prepDurationSec ?? DEFAULT_CONFIG.prepDurationSec, presetName: active ? active.title : null };
     };
     inputHandler._defaultConfigCallback = defaultConfig;
+    // A class that started while the editor was open applies on cancel; a
+    // saved edit is the coach's choice and wins over it
+    inputHandler._onTimeSettingClosed = (saved) => {
+      if (saved) pendingClass = null;
+      else applyPendingClass();
+    };
     inputHandler._resetCallback = () => {
       const src = defaultConfig();
       state.config.roundDurationSec = src.roundDurationSec;

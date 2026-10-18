@@ -463,11 +463,11 @@ describe('Renderer', () => {
     expect(bar.textContent).toContain('Paused');
     renderer.updateStatusBar('finished');
     expect(bar.textContent).toContain('Finished');
-    renderer.updateStatusBar('editing', { field: 'rest seconds', running: false });
+    renderer.updateStatusBar('editing', { field: 'rest seconds' });
     expect(bar.textContent).toContain('Editing rest seconds');
     expect(bar.textContent).toContain('▶ start');
-    renderer.updateStatusBar('editing', { field: 'rounds', running: true });
-    expect(bar.textContent).toContain('edit & restart');
+    renderer.updateStatusBar('notice', { text: 'Stop first · hold ▶' });
+    expect(bar.textContent).toBe('Stop first · hold ▶');
     renderer.updateStatusBar('clock');
     expect(bar.innerHTML).toBe('');
   });
@@ -956,25 +956,25 @@ describe('InputHandler', () => {
     expect(state.config.numRounds).toBe(0);
   });
 
-  it('Enter in time-setting mode saves and starts immediately', () => {
+  it('Enter in time-setting mode saves and goes to Ready', () => {
     press('ArrowUp');
     press('+');
     press('Enter');
     expect(input._timeSettingMode).toBe(false);
-    expect(state.phase).toBe(PHASES.ROUND);
+    expect(state.phase).toBe(PHASES.IDLE);
+    expect(input._ready).toBe(true);
     expect(state.remainingSec).toBe(65);
     expect(StorageManager.load().roundDurationSec).toBe(65);
   });
 
-  it('adjusting a value while running stops the session and keeps editing', () => {
+  it('the ring does not edit a running timer', () => {
     press('Enter');
     press('Enter');
     press('ArrowUp');
-    expect(state.phase).toBe(PHASES.ROUND); // still running until a value changes
     press('+');
-    expect(state.phase).toBe(PHASES.IDLE);
-    expect(input._timeSettingMode).toBe(true);
-    expect(input._ready).toBe(true);
+    expect(state.phase).toBe(PHASES.ROUND);
+    expect(input._timeSettingMode).toBe(false);
+    expect(state.config.roundDurationSec).toBe(5);
   });
 
   it('activates dual mode from the training menu and keeps an edited round count on exit', () => {
@@ -993,7 +993,8 @@ describe('InputHandler', () => {
     press('ArrowRight'); // dual mode continues into timer 2's fields
     expect(input._timeSettingField).toBe('t2-round-min');
     press('ArrowLeft');
-    press('Enter'); // save + start both timers
+    press('Enter'); // save → Ready
+    press('Enter'); // start both timers
     expect(state.phase).toBe(PHASES.ROUND);
     expect(input._dualState.phase).toBe(PHASES.ROUND);
     vi.advanceTimersByTime(1000);
@@ -1557,20 +1558,21 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
   it('holding Menu resets to defaults; Delete (Flirc hold-Menu) does the same', () => {
     press('ArrowUp');
     press('ArrowUp');
-    press('Enter');
+    press(' '); // save and start
     expect(state.phase).toBe(PHASES.ROUND);
     expect(state.config.roundDurationSec).toBe(65);
     keydown('Escape');
     vi.advanceTimersByTime(HOLD_MS);
     keyup('Escape');
-    expect(state.phase).toBe(PHASES.IDLE); // running → stop
+    expect(state.phase).toBe(PHASES.IDLE); // running → stop to Ready
+    expect(input._ready).toBe(true);
     expect(overlay.isOpen()).toBe(false); // the hold must not also open the menu
     press('Delete');
     expect(state.config.roundDurationSec).toBe(FIXTURE_DEFAULTS.roundDurationSec);
     expect(document.body.classList.contains('timer-idle')).toBe(true);
   });
 
-  it('time-setting: ring adjusts, OK starts, Menu cancels and reverts', () => {
+  it('time-setting: ring adjusts, ▶ saves and starts, Menu cancels and reverts', () => {
     press('ArrowDown'); // enters editing on round minutes
     expect(input._timeSettingMode).toBe(true);
     press('ArrowUp');
@@ -1583,7 +1585,7 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     expect(state.config.roundDurationSec).toBe(5);
     press('ArrowUp');
     press('ArrowUp');
-    press(' '); // ▶ confirms and starts like OK
+    press(' '); // ▶ saves and starts
     expect(state.phase).toBe(PHASES.ROUND);
     expect(state.remainingSec).toBe(65);
   });
@@ -1921,9 +1923,8 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     press('Escape');
     expect(bar.innerHTML).toBe('');
     press('Enter'); press('Enter'); // running
-    press('ArrowDown'); // editing while running warns that a change restarts
-    expect(bar.textContent).toContain('edit & restart');
-    press('Escape');
+    press('ArrowDown'); // no editing while running: the label says how to stop
+    expect(bar.textContent).toBe('Stop first · hold ▶');
   });
 
   it('a finished session is labelled Finished until the next start', () => {
@@ -2014,6 +2015,120 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     vi.advanceTimersByTime(HOLD_MS * 2);
     expect(state.phase).toBe(PHASES.ROUND);
     input = new InputHandler(engine, overlay, renderer, audio, state); // afterEach destroys this one
+  });
+
+  // ─── Regular timer: settings change only while nothing is live ───
+
+  const bar = () => document.getElementById('status-bar');
+  const hold = (key) => { keydown(key); vi.advanceTimersByTime(HOLD_MS); keyup(key); };
+  const startRunning = () => { press(' '); press(' '); vi.advanceTimersByTime(2000); };
+
+  it.each(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown'])(
+    'the ring (%s) never edits or stops a running timer', key => {
+      state.config.roundDurationSec = 30;
+      startRunning();
+      press(key);
+      press(key);
+      expect(input._timeSettingMode).toBe(false);
+      expect(state.phase).toBe(PHASES.ROUND);
+      expect(state.remainingSec).toBe(28);
+      expect(state.config.roundDurationSec).toBe(30);
+      expect(audio.playCancel).not.toHaveBeenCalled();
+    });
+
+  it('the ring while running says how to stop, then clears', () => {
+    startRunning();
+    press('ArrowUp');
+    expect(bar().textContent).toBe('Stop first · hold ▶');
+    vi.advanceTimersByTime(2000);
+    expect(bar().innerHTML).toBe('');
+    press('Escape'); // Menu still opens the running menu
+    expect(overlay.isOpen()).toBe(true);
+  });
+
+  it('the ring while paused keeps the session paused and the Paused label back after the notice', () => {
+    startRunning();
+    press(' ');
+    expect(state.paused).toBe(true);
+    press('ArrowUp');
+    press('ArrowDown');
+    expect(input._timeSettingMode).toBe(false);
+    expect(state.paused).toBe(true);
+    expect(state.phase).toBe(PHASES.ROUND);
+    vi.advanceTimersByTime(2000);
+    expect(bar().textContent).toContain('Paused');
+  });
+
+  it('a notice does not overwrite a state reached before it times out', () => {
+    startRunning();
+    press('ArrowUp');
+    press(' '); // pause during the notice
+    expect(bar().textContent).toContain('Paused');
+    vi.advanceTimersByTime(2000);
+    expect(bar().textContent).toContain('Paused');
+  });
+
+  it('OK in the editor saves and goes to Ready without starting', () => {
+    press('ArrowUp');
+    press('ArrowUp');
+    press('Enter');
+    expect(input._timeSettingMode).toBe(false);
+    expect(state.phase).toBe(PHASES.IDLE);
+    expect(input._ready).toBe(true);
+    expect(document.body.classList.contains('timer-idle')).toBe(false);
+    expect(bar().textContent).toContain('Ready');
+    expect(StorageManager.load().roundDurationSec).toBe(65);
+    expect(document.getElementById('round-timer').textContent).toBe('01:05');
+    press(' ');
+    expect(state.phase).toBe(PHASES.ROUND);
+    expect(state.remainingSec).toBe(65);
+  });
+
+  it('▶ in the editor saves and starts', () => {
+    press('ArrowUp');
+    press('ArrowUp');
+    press(' ');
+    expect(state.phase).toBe(PHASES.ROUND);
+    expect(state.remainingSec).toBe(65);
+    expect(StorageManager.load().roundDurationSec).toBe(65);
+  });
+
+  it.each([
+    ['hold ▶', () => hold(' ')],
+    ['hold ▶ (Flirc 0)', () => press('0')],
+    ['hold OK', () => hold('Enter')],
+    ['hold Menu', () => hold('Escape')],
+    ['hold Menu (Flirc Delete)', () => press('Delete')],
+  ])('%s while running stops to Ready with the same times', (_name, stop) => {
+    state.config.roundDurationSec = 30;
+    startRunning();
+    stop();
+    expect(state.phase).toBe(PHASES.IDLE);
+    expect(input._ready).toBe(true);
+    expect(document.body.classList.contains('timer-idle')).toBe(false);
+    expect(state.config.roundDurationSec).toBe(30);
+    expect(bar().textContent).toContain('Ready');
+    expect(overlay.isOpen()).toBe(false);
+  });
+
+  it('Ready and Finished name the way back to the clock face', () => {
+    press(' ');
+    expect(bar().textContent).toContain('hold ▶ clock');
+    renderer.updateStatusBar('finished');
+    expect(bar().textContent).toContain('hold ▶ clock');
+  });
+
+  it('the ring with a round-list preset loaded says why it does nothing', () => {
+    state.roundDurations = [60, 120, 180];
+    press('ArrowUp');
+    expect(input._timeSettingMode).toBe(false);
+    expect(bar().textContent).toBe('Preset · Menu → Restore defaults to edit');
+  });
+
+  it('the editing control line has no running variant', () => {
+    press('ArrowUp');
+    expect(bar().textContent).toContain('OK save');
+    expect(bar().textContent).not.toContain('restart');
   });
 });
 
