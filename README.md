@@ -37,6 +37,7 @@ With a Pyramid, Ladder or Chainsaw preset loaded, the ring shows "Preset · Menu
 → Restore defaults to edit". A class that starts while the editor is open
 waits, as it does while a timer runs: it applies if the edit is cancelled, and
 a saved edit wins over it.
+Stopping lands on Ready with the same times, except that a scheduled class which started while the timer was live loads its preset on stop.
 
 While idle the main menu is ordered by how often each row is used: Training,
 Competition, Restore defaults (only when the app is not in its default state:
@@ -148,4 +149,3 @@ the remote works whichever window has focus. Set `SCREEN2_X` (default 1920) to T
 horizontal resolution so the second window lands on the second TV.
 `--window-position` needs X11 — on Raspberry Pi OS Bookworm switch via
 `sudo raspi-config` → Advanced Options → Wayland → X11.
-

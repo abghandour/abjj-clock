@@ -4094,7 +4094,7 @@ class InputHandler {
    */
   _showNotice(key) {
     const last = this.renderer._lastStatus;
-    if (!this._noticeTimer) this._noticeRestore = last && last.mode !== 'notice' ? last : null;
+    if (!last || last.mode !== 'notice') this._noticeRestore = last || null;
     clearTimeout(this._noticeTimer);
     this.renderer.updateStatusBar('notice', { text: t(key) });
     this._noticeTimer = setTimeout(() => {
