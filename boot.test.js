@@ -441,4 +441,49 @@ describe('app boot', () => {
     } finally { app.APP_SETTINGS.relay.sharedKey = previousKey; }
   });
 
+  // A class that starts while the coach is in the editor waits, the way it
+  // already waits while a timer runs, so the editor never sits on a live timer.
+  describe('a class starting while the editor is open', () => {
+    const roundText = () => document.getElementById('round-timer').textContent;
+    const editAndCrossNoon = async (day) => {
+      stubEnvironment('');
+      vi.setSystemTime(new Date(2026, 8, day, 11, 59, 30));
+      await bootApp();
+      const { state, inputHandler } = window.__bjjApp;
+      press('ArrowUp'); // editor on round minutes
+      press('ArrowUp'); // +1 minute
+      const edited = state.config.roundDurationSec;
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+      expect(inputHandler._timeSettingMode).toBe(true);
+      expect(state.phase).toBe(app.PHASES.IDLE);
+      expect(state.config.roundDurationSec).toBe(edited);
+      return window.__bjjApp;
+    };
+
+    it('applies the class preset once the edit is cancelled', async () => {
+      const { inputHandler } = await editAndCrossNoon(8); // Tuesday noon class
+      expect(document.getElementById('preset-label').textContent).not.toContain('Adult Noon Class');
+      press('Escape');
+      expect(inputHandler._timeSettingMode).toBe(false);
+      expect(document.getElementById('preset-label').textContent).toContain('Adult Noon Class');
+      expect(roundText()).toBe('05:00');
+    });
+
+    it('keeps the saved values when the edit is confirmed', async () => {
+      const { state, inputHandler } = await editAndCrossNoon(8);
+      press('Enter');
+      expect(inputHandler._ready).toBe(true);
+      expect(state.config.roundDurationSec).toBe(7 * 60);
+      expect(roundText()).toBe('07:00');
+    });
+
+    it('does not auto-start Open Mat over the editor', async () => {
+      const { state, inputHandler } = await editAndCrossNoon(12); // Saturday Open Mat
+      press('Escape');
+      expect(inputHandler._timeSettingMode).toBe(false);
+      expect(state.phase).toBe(app.PHASES.IDLE);
+      expect(document.getElementById('preset-label').textContent).toContain('Open Mat');
+    });
+  });
+
 });

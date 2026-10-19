@@ -521,25 +521,26 @@
     #status-bar .sb-ready { background: rgba(0, 204, 68, 0.25); color: #d6ffe1; }
     #status-bar .sb-paused { background: rgba(255, 255, 255, 0.18); color: #ffffff; }
     #status-bar .sb-finished { background: rgba(209, 206, 24, 0.3); color: #fff9b0; }
-    /* Editing: smaller and allowed to wrap so it stays clear of the timer
-       (above the editing layer, which lifts the timer area) */
-    #status-bar .sb-editing {
+    /* Editing and notices: smaller so they stay clear of the timer (above
+       the editing layer, which lifts the timer area). The editing control
+       line breaks only where the string says (\n), never mid-phrase. */
+    #status-bar .sb-editing,
+    #status-bar .sb-notice {
       background: rgba(255, 255, 255, 0.12);
       color: #ffffff;
       text-transform: none;
       letter-spacing: 0.05em;
-      font-size: clamp(1rem, 2.2vw, 2.4rem);
+      font-size: clamp(1rem, 1.8vw, 2.4rem);
     }
 
     #status-bar:has(.sb-editing) {
       z-index: 1000;
-      white-space: normal;
-      max-width: 30vw;
     }
 
     #status-bar .sb-hint {
       font-size: clamp(0.8rem, 1.7vw, 2rem);
       color: var(--text-label);
+      white-space: pre-line;
     }
 
     /* Customization overlay */
