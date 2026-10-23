@@ -72,7 +72,27 @@ works from a keyboard.
 Tetris (last menu row) is a small game for the remote: ◀▶ move, ▲ rotate,
 ▼ soft drop, OK hard drop, ▶ pause, Menu quits. Paco sits in the corner and
 barks on every cleared line (twice for a four-line Tetris). OK restarts after
-a game over. The board is plain HTML, so it shows on the second TV too.
+a game over. The board is plain HTML, so it shows on the second TV too. An
+arcade-style high-score table (top five: initials and score) sits at the bottom
+right next to Paco. A game over that makes the table asks for three initials
+the arcade way: ▲▼ change the letter, ◀▶ move the cursor, OK confirms. The
+row then blinks and the table is kept in browser storage
+(`bjj-timer-tetris-scores`); quitting mid-entry keeps the letters typed so far.
+
+Scoreboard (first row of Competition Presets, also a main-menu row while a
+competition preset is loaded) keeps an IBJJF-style match score under the round
+timer: blue and white panels with points, advantages (ADV) and penalties
+(PEN). While a round is live or paused the ring keeps score instead of
+editing time: ◀ ▶ move a blinking border across the six values (Blue PEN,
+ADV, POINTS, then White POINTS, ADV, PEN), ▲ ▼ change the selected value by
+one (never below zero), and a change to ADV or PEN sends the border back to
+that side's points. A small yellow superscript shows the net change of the
+last few presses and fades after two seconds. Every match starts 0-0; stop,
+reset and the running menu's "Reset score" row clear the panels. The rest
+timer gives up its slot while a round runs and takes it back during rest,
+with the panels compact. The setting is remembered (`bjj-timer-scoreboard`),
+never applies to training presets or dual timers, and mirrors to the second
+TV.
 
 Quiet visuals (menu toggle) replaces the full-screen white flash with an edge
 flash, stops the countdown dimming and shows a steady outline instead of

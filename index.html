@@ -1372,6 +1372,62 @@
       border-color: #ffffff;
     }
 
+
+    /* Match scoreboard: shown with competition presets when the setting is on,
+       in the shrunk idle layout as well as the enlarged timer layout. The rest
+       box gives up its slot to the panels and takes it back during the rest
+       phase (rest-active swap). */
+    #scoreboard { display: none; grid-template-columns: 1fr 1fr; gap: 3vw; width: min(76vw, 1200px); margin-top: 1.5vh; }
+    body.scoreboard #scoreboard { display: grid; }
+    body.scoreboard:not(.timer-idle) #timer-area { padding-top: 4vh; }
+    body.scoreboard #timer-area:not(.time-setting-active) #dual-timer-container:not(.rest-active) #rest-section { display: none; }
+    /* Time setting needs the rest box back; the panels step aside meanwhile */
+    body.scoreboard #timer-area.time-setting-active #scoreboard { display: none; }
+    .sb-side { border-radius: 0.5rem; padding: 0.8vh 1.6vw 1.2vh; }
+    .sb-side.sb-blue { background: #1d4ed8; color: #fff; }
+    .sb-side.sb-white { background: #f3f4f6; color: #000; }
+    .sb-fields { display: flex; align-items: stretch; justify-content: center; gap: 1vw; }
+    .sb-minor { display: flex; flex-direction: column; justify-content: space-evenly; margin: 0 1.6vw; }
+    .sb-field { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; min-width: 4.2vw; }
+    .sb-field .sb-value {
+      font-family: 'DSEG7', sans-serif; font-size: clamp(1.4rem, 2.6vw, 2.8rem); line-height: 1; font-variant-numeric: tabular-nums;
+      padding: 0.5vh 0.5vw; border: 4px solid transparent; border-radius: 0.3rem;
+    }
+    .sb-field.sb-points .sb-value { font-size: clamp(4rem, 10vw, 11rem); padding: 0.6vh 0.8vw; border-width: 6px; border-radius: 0.5rem; }
+    /* Rest phase: the rest box takes the big slot, so the panels go compact and
+       both timers step down one size to keep everything on screen */
+    body.scoreboard:not(.timer-idle) #dual-timer-container.rest-active:not(.dual-mode) #rest-timer { font-size: clamp(3rem, 13vw, 14rem); }
+    body.scoreboard:not(.timer-idle) #dual-timer-container.rest-active:not(.dual-mode) #round-timer { font-size: clamp(2rem, 6.5vw, 7.5rem); }
+    #dual-timer-container.rest-active #scoreboard { width: min(60vw, 960px); margin-top: 0.5vh; }
+    #dual-timer-container.rest-active .sb-side { padding: 0.4vh 1.2vw 0.6vh; }
+    #dual-timer-container.rest-active .sb-field.sb-points .sb-value { font-size: clamp(2.5rem, 5vw, 5.5rem); border-width: 4px; }
+    #dual-timer-container.rest-active .sb-field .sb-value { font-size: clamp(1rem, 1.6vw, 1.8rem); }
+    #dual-timer-container.rest-active .sb-field .sb-label { font-size: clamp(0.6rem, 0.8vw, 0.9rem); margin-top: 0.2vh; }
+    #dual-timer-container.rest-active .sb-field.sb-points .sb-label { font-size: clamp(0.7rem, 1vw, 1.1rem); }
+    .sb-field .sb-label { font-size: clamp(0.7rem, 1.1vw, 1.2rem); letter-spacing: 0.15em; text-transform: uppercase; margin-top: 0.4vh; }
+    .sb-field.sb-points .sb-label { font-size: clamp(0.9rem, 1.7vw, 1.9rem); }
+    .sb-blue .sb-label { color: rgba(255,255,255,0.75); } .sb-white .sb-label { color: rgba(0,0,0,0.55); }
+    .sb-field.sb-pen-hot .sb-value { color: var(--accent-red); }
+    /* Cursor: a border around the whole selected number, blinking with the
+       digits like the active digit group in time-setting mode */
+    .sb-blue .sb-field.sb-focus .sb-value { border-color: #fff; animation: sb-blink-blue 1.4s step-end infinite; }
+    .sb-white .sb-field.sb-focus .sb-value { border-color: #000; animation: blink-bw 1.4s step-end infinite; }
+    @keyframes sb-blink-blue {
+      0%, 49% { color: #ffffff; border-color: #ffffff; }
+      50%, 100% { color: #000000; border-color: #000000; }
+    }
+    body.quiet-visuals .sb-field.sb-focus .sb-value { animation: none; }
+    /* Burst superscript: net change since the last fade, e.g. +1, +2, -1 */
+    .sb-sup {
+      position: absolute; top: 0.4vh; right: -2.6vw; font-family: 'DSEG7', sans-serif; font-size: clamp(1.2rem, 2.4vw, 2.6rem);
+      color: #000; background: var(--accent-yellow); border-radius: 0.3em; padding: 0.08em 0.3em;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.4); visibility: hidden;
+    }
+    .sb-minor .sb-sup { font-size: clamp(0.9rem, 1.5vw, 1.6rem); top: -0.6vh; right: -1.8vw; }
+    .sb-sup.show { visibility: visible; animation: sb-sup-fade 2s ease-out forwards; }
+    @keyframes sb-sup-fade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+    .sb-field.sb-pen-hot .sb-sup, .sb-sup { z-index: 2; }
+
     /* Tetris (main menu): a div grid so it syncs to the second TV */
     #overlay .tetris-overlay { padding: 1.5rem 2rem; }
     #overlay .tetris-overlay .menu-title { margin-bottom: 1vh; }
@@ -1396,8 +1452,32 @@
     .tetris-score, .tetris-lines, .tetris-level { font-family: 'DSEG7', sans-serif; color: var(--accent-green); }
     .tetris-status { min-height: 1.4em; color: var(--accent-yellow); font-weight: 700; }
     .tetris-hint { margin-top: 1vh; font-size: clamp(0.8rem, 1.4vw, 1.5rem); color: var(--text-muted); text-align: center; }
-    /* Paco in the corner: bounces and shows a speech bubble while barking */
-    .tetris-dog-wrap { position: relative; margin-top: auto; align-self: flex-end; display: flex; flex-direction: column; align-items: center; }
+    /* Bottom-right of the popup: Paco next to the arcade high-score table */
+    .tetris-bottom { margin-top: auto; align-self: flex-end; display: flex; align-items: flex-end; gap: 1.5vw; }
+    .tetris-hiscore {
+      font-family: 'Courier New', Courier, monospace; font-weight: 700; text-transform: uppercase;
+      font-size: clamp(0.8rem, 1.5vw, 1.6rem); line-height: 1.5; letter-spacing: 0.08em;
+      color: #fff; background: #000; border: 3px double var(--accent-yellow);
+      padding: 0.4em 0.8em; box-shadow: 0 0 0.6em rgba(255, 215, 0, 0.35);
+      image-rendering: pixelated;
+    }
+    .tetris-hiscore-title { color: #ff4444; text-align: center; letter-spacing: 0.2em; margin-bottom: 0.3em; animation: hs-title-glow 1.2s steps(2) infinite; }
+    @keyframes hs-title-glow { 0%, 100% { color: #ff4444; } 50% { color: var(--accent-yellow); } }
+    .tetris-hiscore-row { display: flex; gap: 1.2em; white-space: pre; }
+    .tetris-hiscore-row .hs-rank { color: var(--accent-yellow); }
+    .tetris-hiscore-row .hs-name { color: #fff; }
+    .tetris-hiscore-row .hs-ch { display: inline-block; min-width: 1ch; text-align: center; }
+    .tetris-hiscore-row .hs-ch.hs-cursor { background: var(--accent-yellow); color: #000; animation: hs-cursor-blink 0.5s steps(1) infinite; }
+    @keyframes hs-cursor-blink { 0%, 100% { background: var(--accent-yellow); color: #000; } 50% { background: transparent; color: var(--accent-yellow); } }
+    .tetris-hiscore-row.hs-entering { background: rgba(255,255,255,0.12); }
+    .tetris-hiscore-row .hs-score { color: #2bd4e6; }
+    .tetris-hiscore-row.hs-empty span { color: rgba(255,255,255,0.3); }
+    .tetris-hiscore-row.hs-new { animation: hs-new-blink 0.6s steps(1) infinite; }
+    @keyframes hs-new-blink { 0%, 100% { background: rgba(255,255,255,0.25); } 50% { background: transparent; } }
+    body.quiet-visuals .tetris-hiscore-title, body.quiet-visuals .tetris-hiscore-row.hs-new, body.quiet-visuals .hs-ch.hs-cursor { animation: none; }
+    body.quiet-visuals .tetris-hiscore-row.hs-new { background: rgba(255,255,255,0.25); }
+    /* Paco: bounces and shows a speech bubble while barking */
+    .tetris-dog-wrap { position: relative; display: flex; flex-direction: column; align-items: center; }
     .tetris-dog {
       width: clamp(4rem, 9vw, 9rem); height: clamp(4rem, 9vw, 9rem);
       border-radius: 50%; object-fit: cover; border: 3px solid rgba(255,255,255,0.2);
@@ -1455,6 +1535,17 @@
         <div id="rest-section">
           <div id="rest-label">Rest</div>
           <div id="rest-timer"><span class="ts-minutes">01</span>:<span class="ts-seconds">00</span></div>
+        </div>
+        <!-- Match scoreboard (competition presets, optional) -->
+        <div id="scoreboard">
+          <div class="sb-side sb-blue"><div class="sb-fields">
+            <div class="sb-minor"><div class="sb-field" data-field="blueAdv"><span class="sb-value">0</span><span class="sb-label"></span><span class="sb-sup"></span></div><div class="sb-field" data-field="bluePen"><span class="sb-value">0</span><span class="sb-label"></span><span class="sb-sup"></span></div></div>
+            <div class="sb-field sb-points" data-field="bluePoints"><span class="sb-value">0</span><span class="sb-label"></span><span class="sb-sup"></span></div>
+          </div></div>
+          <div class="sb-side sb-white"><div class="sb-fields">
+            <div class="sb-field sb-points" data-field="whitePoints"><span class="sb-value">0</span><span class="sb-label"></span><span class="sb-sup"></span></div>
+            <div class="sb-minor"><div class="sb-field" data-field="whiteAdv"><span class="sb-value">0</span><span class="sb-label"></span><span class="sb-sup"></span></div><div class="sb-field" data-field="whitePen"><span class="sb-value">0</span><span class="sb-label"></span><span class="sb-sup"></span></div></div>
+          </div></div>
         </div>
         <div id="round-counter"></div>
       </div>

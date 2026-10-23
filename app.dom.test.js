@@ -35,7 +35,8 @@ const {
   DISPLAY_MODES,
   DisplaySyncManager,
   STRINGS, LANGUAGES, t, setLanguage, applyStaticTranslations, presetDisplayName, classDisplayName,
-  TetrisGame, TETRIS_COLS, TETRIS_ROWS,
+  Scoreboard, SCORE_FIELDS, SCORE_BURST_MS,
+  TetrisGame, TETRIS_COLS, TETRIS_ROWS, TETRIS_SCORES_KEY, TETRIS_SCORES_MAX, TETRIS_NAME_CHARS, loadTetrisScores, recordTetrisScore, normalizeTetrisName,
   SYNC_SECTION_IDS,
   SYNC_ATTR_IDS,
   buildSyncSnapshot,
@@ -1536,17 +1537,20 @@ describe('Remote control (ring / OK / ▶ / Menu)', () => {
     expect(selectedName()).toBe('Competition');
     press('Enter');
     expect(overlay._mode).toBe('competition');
-    press('ArrowDown');
+    expect(selectedName()).toBe('Scoreboard'); // toggle row leads the preset list
+    press('ArrowDown'); press('ArrowDown');
     press('Enter'); // second IBJJF preset
     expect(overlay.isOpen()).toBe(false);
     const names = Object.keys(APP_SETTINGS.competitionPresets);
     expect(document.getElementById('preset-label').textContent).toContain(names[1]);
 
     press('Escape');
-    expect(selectedName()).toBe('Training'); // presets lead; the Restore row sits third once a preset is selected
+    expect(selectedName()).toBe('Training'); // presets lead; Scoreboard then Restore follow once a competition preset is selected
     press('ArrowDown'); press('ArrowDown');
+    expect(selectedName()).toBe('Scoreboard');
+    press('ArrowDown');
     expect(selectedName()).toBe('Restore defaults');
-    press('ArrowUp'); press('ArrowUp');
+    press('ArrowUp'); press('ArrowUp'); press('ArrowUp');
     press('Enter'); // Training
     expect(overlay._mode).toBe('training');
     press('Escape'); // back to main
@@ -2177,6 +2181,83 @@ describe('main menu icons', () => {
   });
 });
 
+describe('Scoreboard', () => {
+  let sb;
+  const root = () => document.getElementById('scoreboard');
+  const focused = () => root().querySelector('.sb-field.sb-focus').dataset.field;
+  const value = (f) => root().querySelector(`.sb-field[data-field="${f}"] .sb-value`).textContent;
+  const sup = (f) => root().querySelector(`.sb-field[data-field="${f}"] .sb-sup`);
+  beforeEach(() => { vi.useFakeTimers(); loadDom(); sb = new Scoreboard(root()); });
+  afterEach(() => { sb.destroy(); vi.useRealTimers(); });
+
+  it('starts 0-0 with the cursor on Blue points and labels filled in', () => {
+    expect(SCORE_FIELDS).toEqual(['bluePen', 'blueAdv', 'bluePoints', 'whitePoints', 'whiteAdv', 'whitePen']);
+    expect(focused()).toBe('bluePoints');
+    expect(SCORE_FIELDS.map(value)).toEqual(['0', '0', '0', '0', '0', '0']);
+    expect(root().querySelector('.sb-field[data-field="bluePoints"] .sb-label').textContent).toBe('Points');
+    expect(root().querySelector('.sb-field[data-field="whiteAdv"] .sb-label').textContent).toBe('Adv');
+    expect(root().querySelector('.sb-field[data-field="whitePen"] .sb-label').textContent).toBe('Pen');
+  });
+
+  it('◀ ▶ walk the ring order and stop at the ends', () => {
+    sb.handleKey('ArrowLeft'); expect(focused()).toBe('blueAdv');
+    sb.handleKey('ArrowLeft'); expect(focused()).toBe('bluePen');
+    sb.handleKey('ArrowLeft'); expect(focused()).toBe('bluePen');
+    for (let i = 0; i < 3; i++) sb.handleKey('ArrowRight');
+    expect(focused()).toBe('whitePoints');
+    sb.handleKey('ArrowRight'); expect(focused()).toBe('whiteAdv');
+    sb.handleKey('ArrowRight'); expect(focused()).toBe('whitePen');
+    sb.handleKey('ArrowRight'); expect(focused()).toBe('whitePen');
+  });
+
+  it('▲ ▼ change the focused value by 1, never below 0, and ADV / PEN send the cursor home', () => {
+    sb.handleKey('ArrowUp'); sb.handleKey('ArrowUp');
+    expect(value('bluePoints')).toBe('2');
+    sb.handleKey('ArrowDown'); sb.handleKey('ArrowDown'); sb.handleKey('ArrowDown');
+    expect(value('bluePoints')).toBe('0');
+    sb.handleKey('ArrowLeft'); sb.handleKey('ArrowUp'); // Blue ADV +1
+    expect(value('blueAdv')).toBe('1');
+    expect(focused()).toBe('bluePoints');
+    sb.handleKey('ArrowLeft'); sb.handleKey('ArrowLeft'); sb.handleKey('ArrowUp'); // Blue PEN +1
+    expect(value('bluePen')).toBe('1');
+    expect(root().querySelector('.sb-field[data-field="bluePen"]').classList.contains('sb-pen-hot')).toBe(true);
+    expect(focused()).toBe('bluePoints');
+    for (let i = 0; i < 3; i++) sb.handleKey('ArrowRight'); // White PEN
+    sb.handleKey('ArrowUp');
+    expect(value('whitePen')).toBe('1');
+    expect(focused()).toBe('whitePoints');
+  });
+
+  it('shows the net change of a burst and fades it after two seconds', () => {
+    sb.handleKey('ArrowUp');
+    expect(sup('bluePoints').textContent).toBe('+1');
+    expect(sup('bluePoints').classList.contains('show')).toBe(true);
+    const firstSeq = sup('bluePoints').dataset.seq;
+    vi.advanceTimersByTime(SCORE_BURST_MS - 100);
+    sb.handleKey('ArrowUp');
+    expect(sup('bluePoints').textContent).toBe('+2');
+    expect(sup('bluePoints').dataset.seq).not.toBe(firstSeq); // the CSS fade restarts from this press
+    expect(sup('bluePoints').classList.contains('show')).toBe(true);
+    sb.handleKey('ArrowDown');
+    expect(sup('bluePoints').textContent).toBe('+1');
+    vi.advanceTimersByTime(SCORE_BURST_MS);
+    expect(sup('bluePoints').textContent).toBe('');
+    expect(sup('bluePoints').classList.contains('show')).toBe(false);
+    sb.handleKey('ArrowDown'); // new burst after the fade, and the floor at 0 applies
+    expect(sup('bluePoints').textContent).toBe('-1');
+    sb.handleKey('ArrowDown');
+    expect(sup('bluePoints').textContent).toBe('-1');
+    expect(value('bluePoints')).toBe('0');
+    sb.handleKey('ArrowRight'); sb.handleKey('ArrowUp'); // a different field starts its own burst
+    expect(sup('whitePoints').textContent).toBe('+1');
+    expect(sup('bluePoints').textContent).toBe('');
+    sb.reset();
+    expect(sup('whitePoints').textContent).toBe('');
+    expect(value('whitePoints')).toBe('0');
+    expect(focused()).toBe('bluePoints');
+  });
+});
+
 describe('Tetris', () => {
   let root, game, lines;
   // Deterministic piece order: always the O piece (2x2), easy to stack
@@ -2184,13 +2265,23 @@ describe('Tetris', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     loadDom();
+    localStorage.clear();
     root = document.createElement('div');
     document.body.appendChild(root);
     lines = [];
-    game = new TetrisGame(root, { onLines: (n) => lines.push(n), random: alwaysO });
+    game = new TetrisGame(root, { onLines: (n) => lines.push(n), random: alwaysO, now: () => new Date('2026-10-23T12:00:00Z') });
     game.start();
   });
   afterEach(() => { game.stop(); vi.useRealTimers(); });
+
+  // Fill every row but the top one so the next spawn ends the game
+  const endGame = () => {
+    game.board = game.board.map((row, r) => r >= 1 ? row.map((_, c) => (c === 0 ? '' : 'Z')) : row);
+    game.cur.x = 4; game.handleKey('Enter');
+    expect(game.over).toBe(true);
+  };
+  const rowText = (i) => Array.from(root.querySelectorAll('.tetris-hiscore-row')[i].children).map(el => el.textContent.replace(/\u00a0/g, ' '));
+  const cursorIndex = () => Array.from(root.querySelectorAll('.tetris-hiscore-row.hs-entering .hs-ch')).findIndex(ch => ch.classList.contains('hs-cursor'));
 
   it('renders a 10x20 grid, moves, hard drops and locks pieces', () => {
     expect(root.querySelectorAll('.tetris-board .tc')).toHaveLength(TETRIS_COLS * TETRIS_ROWS);
@@ -2259,6 +2350,249 @@ describe('Tetris', () => {
     expect(game.over).toBe(false);
     expect(game.lines).toBe(0);
     expect(game.board.every(row => row.every(c => c === ''))).toBe(true);
+  });
+
+  it('shows an empty five-row arcade leaderboard at the bottom right', () => {
+    const table = root.querySelector('.tetris-bottom .tetris-hiscore');
+    expect(table.querySelector('.tetris-hiscore-title').textContent).toBe('High scores');
+    expect(table.querySelectorAll('.tetris-hiscore-row')).toHaveLength(TETRIS_SCORES_MAX);
+    expect(rowText(0)).toEqual(['1ST', '---', '------']);
+    expect(rowText(4)).toEqual(['5TH', '---', '------']);
+    expect(root.querySelectorAll('.tetris-hiscore-row.hs-empty')).toHaveLength(5);
+    expect(root.querySelector('.tetris-bottom .tetris-dog')).not.toBeNull();
+  });
+
+  it('a new record asks for initials: ▲▼ letter, ◀▶ position, OK confirms and persists', () => {
+    game.score = 1200; game.lines = 7;
+    endGame();
+    expect(game.newRank).toBe(0);
+    expect(game.entering).toBe(true);
+    expect(rowText(0)).toEqual(['1ST', 'AAA', '001200']);
+    expect(cursorIndex()).toBe(0);
+    expect(root.querySelector('.tetris-status').textContent).toBe('New record! · ▲▼ letter · ◀▶ position · OK confirm');
+    expect(localStorage.getItem(TETRIS_SCORES_KEY)).toBeNull(); // nothing saved until confirmed
+    game.handleKey('ArrowUp'); game.handleKey('ArrowUp'); // A → C
+    game.handleKey('ArrowRight');
+    game.handleKey('ArrowDown'); // A → wraps to space
+    game.handleKey('ArrowRight');
+    game.handleKey('ArrowRight'); // stays on the last letter
+    for (let i = 0; i < 10; i++) game.handleKey('ArrowUp'); // A → K
+    expect(cursorIndex()).toBe(2);
+    expect(rowText(0)).toEqual(['1ST', 'C K', '001200']);
+    game.handleKey('ArrowLeft'); game.handleKey('ArrowLeft'); game.handleKey('ArrowLeft');
+    expect(cursorIndex()).toBe(0);
+    game.handleKey('ArrowDown'); // C → B
+    game.handleKey('Play'); // ignored while entering
+    expect(game.over).toBe(true);
+    game.handleKey('Enter'); // confirm
+    expect(game.entering).toBe(false);
+    expect(cursorIndex()).toBe(-1);
+    expect(rowText(0)).toEqual(['1ST', 'B K', '001200']);
+    expect(root.querySelectorAll('.tetris-hiscore-row')[0].classList.contains('hs-new')).toBe(true);
+    expect(root.querySelector('.tetris-status').textContent).toBe('New record! · OK: play again');
+    expect(JSON.parse(localStorage.getItem(TETRIS_SCORES_KEY))).toEqual([{ name: 'B K', score: 1200, lines: 7, date: '2026-10-23' }]);
+    game.handleKey('Enter'); // restart: table stays, highlight goes
+    expect(game.over).toBe(false);
+    expect(rowText(0)).toEqual(['1ST', 'B K', '001200']);
+    expect(root.querySelector('.tetris-hiscore-row.hs-new')).toBeNull();
+  });
+
+  it('quitting mid-entry keeps the score with the letters typed so far', () => {
+    game.score = 400; game.lines = 2;
+    endGame();
+    game.handleKey('ArrowUp'); // B
+    game.stop(); // Menu quit closes the overlay
+    expect(game.entering).toBe(false);
+    expect(JSON.parse(localStorage.getItem(TETRIS_SCORES_KEY))[0].name).toBe('BAA');
+  });
+
+  it('a zero score is not filed and the status says game over', () => {
+    endGame();
+    expect(game.newRank).toBe(-1);
+    expect(root.querySelector('.tetris-status').textContent).toContain('Game over');
+    expect(localStorage.getItem(TETRIS_SCORES_KEY)).toBeNull();
+  });
+
+  it('loads stored scores best-first, keeps five and ignores junk', () => {
+    localStorage.setItem(TETRIS_SCORES_KEY, JSON.stringify([
+      { score: 300, lines: 2, date: '2026-01-01' }, { score: 900, lines: 5, date: '2026-01-02' }, { score: 0 }, null, 'x',
+      { score: 500, lines: 3 }, { score: 700, lines: 4 }, { score: 100, lines: 1 }, { score: 800, lines: 4 }
+    ]));
+    expect(loadTetrisScores().map(e => e.score)).toEqual([900, 800, 700, 500, 300]);
+    expect(loadTetrisScores().map(e => e.name)).toEqual(['   ', '   ', '   ', '   ', '   ']);
+    expect(normalizeTetrisName('abcd')).toBe('ABC');
+    expect(normalizeTetrisName('a-1')).toBe('A1 ');
+    expect(TETRIS_NAME_CHARS).toContain(' ');
+    const fresh = new TetrisGame(document.createElement('div'), { random: alwaysO });
+    fresh.render();
+    expect(fresh.highScores.map(e => e.score)).toEqual([900, 800, 700, 500, 300]);
+    localStorage.setItem(TETRIS_SCORES_KEY, '{not json');
+    expect(loadTetrisScores()).toEqual([]);
+  });
+
+  it('recordTetrisScore ranks new entries, keeps older ties ahead and drops the sixth', () => {
+    const list = [600, 500, 400, 300, 200].map(score => ({ score, lines: 1, date: '' }));
+    expect(recordTetrisScore(list, { score: 500, lines: 1, date: '' }).rank).toBe(2);
+    const top = recordTetrisScore(list, { score: 700, lines: 1, date: '' });
+    expect(top.rank).toBe(0);
+    expect(top.scores.map(e => e.score)).toEqual([700, 600, 500, 400, 300]);
+    expect(recordTetrisScore(list, { score: 150, lines: 1, date: '' }).rank).toBe(-1);
+    expect(recordTetrisScore(list, { score: 200, lines: 1, date: '' }).rank).toBe(-1);
+    expect(list).toHaveLength(5); // input untouched
+  });
+});
+
+describe('Scoreboard from the remote', () => {
+  let state, engine, renderer, overlay, audio, input;
+  const competitionName = () => Object.keys(APP_SETTINGS.competitionPresets)[0];
+  const overlayEl = () => document.getElementById('overlay');
+  const selectedName = () => overlayEl().querySelector('.mg-name.mg-sel').textContent;
+  const focused = () => document.querySelector('#scoreboard .sb-field.sb-focus').dataset.field;
+  const value = (f) => document.querySelector(`#scoreboard .sb-field[data-field="${f}"] .sb-value`).textContent;
+  const loadCompetition = () => input._applyMenuConfig({ roundDurationSec: 5, restDurationSec: 2, numRounds: 0, prepDurationSec: 0, presetName: competitionName() });
+  const hold = (key) => { keydown(key); vi.advanceTimersByTime(HOLD_MS); keyup(key); };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    loadDom();
+    localStorage.clear();
+    APP_SETTINGS.scoreboard = false;
+    state = createTimerState({ roundDurationSec: 5, restDurationSec: 2, numRounds: 0, prepDurationSec: 0 });
+    renderer = new Renderer();
+    audio = fakeAudio();
+    overlay = new OverlayManager();
+    engine = new TimerEngine(state, () => {}, () => {});
+    input = new InputHandler(engine, overlay, renderer, audio, state);
+    input._defaultConfigCallback = () => ({ roundDurationSec: 5, restDurationSec: 2, numRounds: 0, prepDurationSec: 0, presetName: null });
+    input._resetCallback = () => { state._presetName = null; };
+    document.body.classList.add('timer-idle');
+  });
+  afterEach(() => { input.destroy(); engine.stop(); APP_SETTINGS.scoreboard = false; vi.useRealTimers(); });
+
+  it('the Competition Presets list leads with a persisted Scoreboard toggle', () => {
+    press('Escape'); press('ArrowDown'); press('Enter'); // main menu → Competition
+    expect(overlay._mode).toBe('competition');
+    expect(selectedName()).toBe('Scoreboard');
+    expect(overlayEl().textContent).toContain('OFF');
+    press('Enter');
+    expect(APP_SETTINGS.scoreboard).toBe(true);
+    expect(localStorage.getItem('bjj-timer-scoreboard')).toBe('true');
+    expect(overlay._mode).toBe('competition'); // stays open, note flips
+    expect(selectedName()).toBe('Scoreboard');
+    expect(overlayEl().textContent).toContain('ON');
+    press('ArrowDown'); press('Enter'); // first preset
+    expect(overlay.isOpen()).toBe(false);
+    expect(state._presetName).toBe(competitionName());
+    expect(document.body.classList.contains('scoreboard')).toBe(true);
+    press('1'); // digit shortcut still picks a preset directly
+  });
+
+  it('panels only show for competition presets with the setting on, never in dual mode', () => {
+    APP_SETTINGS.scoreboard = true;
+    input._applyMenuConfig({ roundDurationSec: 20, restDurationSec: 10, numRounds: 8, prepDurationSec: 0, presetName: 'Tabata' });
+    expect(document.body.classList.contains('scoreboard')).toBe(false);
+    loadCompetition();
+    expect(document.body.classList.contains('scoreboard')).toBe(true);
+    input._activateDualMode(); // clears the preset
+    expect(document.body.classList.contains('scoreboard')).toBe(false);
+    input._deactivateDualMode();
+    loadCompetition();
+    expect(document.body.classList.contains('scoreboard')).toBe(true);
+    overlay.toggleScoreboard(); // off from the main-menu row
+    expect(document.body.classList.contains('scoreboard')).toBe(false);
+  });
+
+  it('while a round is live the ring keeps score instead of asking to stop first', () => {
+    APP_SETTINGS.scoreboard = true;
+    loadCompetition();
+    press(' '); press(' '); // ready → running
+    expect(state.phase).toBe(PHASES.ROUND);
+    press('ArrowUp'); press('ArrowUp');
+    expect(value('bluePoints')).toBe('2');
+    expect(audio.playMuffle).toHaveBeenCalledTimes(2);
+    press('ArrowRight'); press('ArrowUp');
+    expect(value('whitePoints')).toBe('1');
+    press('ArrowRight'); press('ArrowUp'); // White ADV, cursor goes home
+    expect(value('whiteAdv')).toBe('1');
+    expect(focused()).toBe('whitePoints');
+    expect(input._timeSettingMode).toBe(false);
+    expect(document.getElementById('status-bar').textContent).not.toContain('Stop');
+    press(' '); // pause: scoring still works
+    press('ArrowDown');
+    expect(value('whitePoints')).toBe('0');
+    // Running menu offers Reset score
+    press('Escape');
+    press('ArrowDown'); press('ArrowDown');
+    expect(selectedName()).toBe('Reset score');
+    press('Enter');
+    expect(overlay.isOpen()).toBe(false);
+    expect(value('bluePoints')).toBe('0');
+    expect(value('whiteAdv')).toBe('0');
+  });
+
+  it('every match starts 0-0 and stopping clears the panels', () => {
+    APP_SETTINGS.scoreboard = true;
+    loadCompetition();
+    press(' '); press(' ');
+    press('ArrowUp'); press('ArrowUp'); press('ArrowUp');
+    expect(value('bluePoints')).toBe('3');
+    hold(' '); // stop → ready
+    expect(state.phase).toBe(PHASES.IDLE);
+    expect(value('bluePoints')).toBe('0');
+    press(' '); // start again from ready
+    expect(state.phase).toBe(PHASES.ROUND);
+    press('ArrowUp');
+    expect(value('bluePoints')).toBe('1');
+    hold(' ');
+    press(' ');
+    expect(value('bluePoints')).toBe('0');
+  });
+
+  it('a match started from time-setting mode also begins 0-0', () => {
+    APP_SETTINGS.scoreboard = true;
+    loadCompetition();
+    press(' '); press(' ');
+    press('ArrowUp'); press('ArrowUp');
+    expect(value('bluePoints')).toBe('2');
+    engine.stop(); // a finite preset ending on its own: no stop gesture, no reset
+    expect(state.phase).toBe(PHASES.IDLE);
+    expect(value('bluePoints')).toBe('2');
+    press('ArrowUp'); // idle ring: time-setting mode
+    expect(input._timeSettingMode).toBe(true);
+    press(' '); // Play from the editor starts the next match
+    expect(state.phase).toBe(PHASES.ROUND);
+    expect(value('bluePoints')).toBe('0');
+  });
+
+  it('cancelling a time edit brings the panels back with the restored preset', () => {
+    APP_SETTINGS.scoreboard = true;
+    loadCompetition();
+    press(' '); // ready
+    press('ArrowUp'); // enter time setting
+    press('ArrowUp'); // an edit drops the preset, so the panels go away
+    expect(state._presetName).toBeNull();
+    expect(document.body.classList.contains('scoreboard')).toBe(false);
+    press('Escape'); // cancel restores the preset
+    expect(state._presetName).toBe(competitionName());
+    expect(document.body.classList.contains('scoreboard')).toBe(true);
+  });
+
+  it('with the scoreboard off the ring still shows the stop-first notice', () => {
+    loadCompetition();
+    press(' '); press(' ');
+    press('ArrowUp');
+    expect(document.getElementById('status-bar').textContent).toContain(t('notice.stopFirst'));
+    expect(value('bluePoints')).toBe('0');
+  });
+
+  it('the scoreboard is part of the display snapshot', () => {
+    APP_SETTINGS.scoreboard = true;
+    loadCompetition();
+    press(' '); press(' '); press('ArrowUp');
+    const snap = buildSyncSnapshot(document, () => ({}), 's1');
+    expect(snap.bodyClass).toContain('scoreboard');
+    expect(snap.sections.scoreboard).toContain('sb-focus');
+    expect(snap.sections.scoreboard).toContain('>1<');
   });
 });
 

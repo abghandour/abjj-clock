@@ -123,6 +123,8 @@ const APP_SETTINGS = {
   // Quiet visuals: edge flash instead of a full-screen white flash, steady
   // outlines instead of blinking digits, no countdown dimming.
   quietVisuals: readStorage('bjj-timer-quiet-visuals') === 'true',
+  // Match scoreboard (points / advantages / penalties) shown with competition presets
+  scoreboard: readStorage('bjj-timer-scoreboard') === 'true',
   relay: { sharedKey: '1' },
   alertThresholdSec: 5,
   audio: {
@@ -278,10 +280,14 @@ const STRINGS = {
     'screens.toast': 'Screens: {mode}', 'screens.mirror': 'Mirror', 'screens.clocktimer': 'Clock + Timer', 'screens.split': 'Split Timers',
     'sync.disconnected': 'Primary display disconnected. Timer may be out of date',
     'stealth.hint': 'Press any key to display timers',
+    'menu.scoreboard': 'Scoreboard', 'menu.resetScore': 'Reset score',
+    'score.points': 'Points', 'score.adv': 'Adv', 'score.pen': 'Pen',
     'menu.tetris': 'Tetris', 'tetris.score': 'Score', 'tetris.lines': 'Lines', 'tetris.level': 'Level', 'tetris.next': 'Next',
     'tetris.paused': 'Paused', 'tetris.over': 'Game over', 'tetris.restart': 'OK: play again',
     'tetris.hint': '◀▶ move · ▲ rotate · ▼ drop · OK hard drop · ▶ pause · Menu quit',
-    'tetris.bark': 'Woof!', 'tetris.bigBark': 'WOOF WOOF!'
+    'tetris.bark': 'Woof!', 'tetris.bigBark': 'WOOF WOOF!',
+    'tetris.high': 'High scores', 'tetris.newHigh': 'New record!',
+    'tetris.enterName': '▲▼ letter · ◀▶ position · OK confirm'
   },
   pt: {
     'menu.title': 'Menu', 'menu.training': 'Treino', 'menu.competition': 'Competição',
@@ -339,10 +345,14 @@ const STRINGS = {
     'screens.toast': 'Telas: {mode}', 'screens.mirror': 'Espelho', 'screens.clocktimer': 'Relógio + Cronômetro', 'screens.split': 'Cronômetros separados',
     'sync.disconnected': 'Tela principal desconectada. O cronômetro pode estar desatualizado',
     'stealth.hint': 'Pressione qualquer botão para mostrar os cronômetros',
+    'menu.scoreboard': 'Placar', 'menu.resetScore': 'Zerar placar',
+    'score.points': 'Pontos', 'score.adv': 'Vant', 'score.pen': 'Pun',
     'menu.tetris': 'Tetris', 'tetris.score': 'Pontos', 'tetris.lines': 'Linhas', 'tetris.level': 'Nível', 'tetris.next': 'Próxima',
     'tetris.paused': 'Pausado', 'tetris.over': 'Fim de jogo', 'tetris.restart': 'OK: jogar de novo',
     'tetris.hint': '◀▶ mover · ▲ girar · ▼ descer · OK cair · ▶ pausar · Menu sair',
-    'tetris.bark': 'Au!', 'tetris.bigBark': 'AU AU!'
+    'tetris.bark': 'Au!', 'tetris.bigBark': 'AU AU!',
+    'tetris.high': 'Recordes', 'tetris.newHigh': 'Novo recorde!',
+    'tetris.enterName': '▲▼ letra · ◀▶ posição · OK confirmar'
   }
 };
 
@@ -1147,6 +1157,7 @@ const ICONS = {
   globe: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
   wrench: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`,
   info: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
+  trophy: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M7 6H4a1 1 0 0 0-1 1 4 4 0 0 0 4 4M17 6h3a1 1 0 0 1 1 1 4 4 0 0 1-4 4"/></svg>`,
   gamepad: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="11" rx="4"/><path d="M6 12h4M8 10v4"/><path d="M15 11h.01M18 13h.01"/></svg>`,
   snow: (s) => `<svg ${s} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M3.3 7l17.4 10"/><path d="M3.3 17L20.7 7"/><path d="M9 4.5l3 2 3-2"/><path d="M9 19.5l3-2 3 2"/><path d="M4.5 9.5l3.5 1-1 3.5"/><path d="M19.5 14.5l-3.5-1 1-3.5"/><path d="M4.5 14.5l3.5-1-1-3.5"/><path d="M19.5 9.5l-3.5 1 1 3.5"/></svg>`
 };
@@ -2389,6 +2400,23 @@ class OverlayManager {
   }
 
   /**
+   * Flip the match scoreboard for competition presets, persist it and tell
+   * the app to show or hide the panels.
+   * @returns {boolean} the new enabled state
+   */
+  toggleScoreboard() {
+    const enabled = !APP_SETTINGS.scoreboard;
+    APP_SETTINGS.scoreboard = enabled;
+    try {
+      localStorage.setItem('bjj-timer-scoreboard', String(enabled));
+    } catch (e) {
+      // localStorage unavailable — setting applies for this session only
+    }
+    if (this._onScoreboardToggle) this._onScoreboardToggle(enabled);
+    return enabled;
+  }
+
+  /**
    * Cycle the UI language (English → Portuguese → English), persist it and
    * tell the app to re-label what is on screen.
    * @returns {string} the language now in effect
@@ -2425,12 +2453,18 @@ class OverlayManager {
 
   _handleCompetitionKey(key) {
     const presetNames = Object.keys(APP_SETTINGS.competitionPresets);
+    // Row 0 is the Scoreboard toggle, the presets follow
     if (key === 'ArrowUp' || key === 'ArrowDown') {
-      this._selIndex = moveSelection(this._selIndex, key === 'ArrowUp' ? -1 : 1, presetNames.length);
+      this._selIndex = moveSelection(this._selIndex, key === 'ArrowUp' ? -1 : 1, presetNames.length + 1);
       this._renderCompetitionMenu();
       return;
     }
-    const presetIndex = key === 'Enter' ? this._selIndex : parseInt(key, 10);
+    if (key === 'Enter' && this._selIndex === 0) {
+      this.toggleScoreboard();
+      this._renderCompetitionMenu();
+      return;
+    }
+    const presetIndex = key === 'Enter' ? this._selIndex - 1 : parseInt(key, 10);
     if (isNaN(presetIndex)) return;
     if (presetIndex >= 0 && presetIndex < presetNames.length) {
       const name = presetNames[presetIndex];
@@ -2917,10 +2951,15 @@ class OverlayManager {
     rows += `<span></span><span></span>` +
             `<span class="mg-note" style="color:var(--text-round);font-weight:700;">${t('label.round')}</span>` +
             `<span class="mg-note" style="color:var(--text-rest);font-weight:700;">${t('label.rest')}</span>`;
+    const tsel = this._selIndex === 0 ? ' mg-sel' : '';
+    rows += `<span class="mg-icon mg-first${tsel}">${ICONS.trophy(_s)}</span>` +
+            `<span class="mg-name${tsel}">${escapeHtml(t('menu.scoreboard'))}</span>` +
+            `<span class="mg-note${tsel}">${APP_SETTINGS.scoreboard ? t('menu.on') : t('menu.off')}</span>` +
+            `<span class="mg-note mg-last${tsel}"></span>`;
     presetNames.forEach((name, i) => {
       const p = APP_SETTINGS.competitionPresets[name];
       const icon = presetIcon(name, _s) || ICONS.belt(_s, '#aaa');
-      const sel = i === this._selIndex ? ' mg-sel' : '';
+      const sel = i + 1 === this._selIndex ? ' mg-sel' : '';
       rows += `<span class="mg-icon mg-first${sel}">${icon}</span>` +
               `<span class="mg-name${sel}">${escapeHtml(presetDisplayName(name))}</span>` +
               `<span class="mg-note${sel}" style="color:var(--text-round);">${formatTime(p.roundDurationSec)}</span>` +
@@ -3149,6 +3188,112 @@ class OverlayManager {
 
 }
 
+// --- Scoreboard ---
+
+/** Field order the ring walks: ◀ goes down the list index, ▶ up. */
+const SCORE_FIELDS = ['bluePen', 'blueAdv', 'bluePoints', 'whitePoints', 'whiteAdv', 'whitePen'];
+const SCORE_HOME = { blue: 2, white: 3 };
+const SCORE_BURST_MS = 2000;
+
+/**
+ * IBJJF-style match score for one competition round: points, advantages and
+ * penalties per side, a cursor over the six fields and a short-lived
+ * "burst" superscript showing the net change of the last few presses.
+ * Pure state plus a render into the static #scoreboard markup, so the
+ * second TV mirrors it through the ordinary snapshot.
+ */
+class Scoreboard {
+  /**
+   * @param {HTMLElement|null} rootEl - The #scoreboard element (may be null in tests)
+   */
+  constructor(rootEl) {
+    this.rootEl = rootEl;
+    this._burstTimer = null;
+    this.reset();
+  }
+
+  /** Back to 0-0 with the cursor on Blue points. */
+  reset() {
+    this.values = {};
+    for (const f of SCORE_FIELDS) this.values[f] = 0;
+    this.focus = SCORE_HOME.blue;
+    this._clearBurst();
+    this.render();
+  }
+
+  get focusField() { return SCORE_FIELDS[this.focus]; }
+
+  /** ◀ / ▶: one field along the ring order, stopping at the ends. */
+  move(dir) {
+    this.focus = Math.max(0, Math.min(SCORE_FIELDS.length - 1, this.focus + dir));
+    this.render();
+  }
+
+  /** ▲ / ▼: +1 / -1 on the focused value (floor 0); ADV / PEN changes send the cursor home. */
+  adjust(delta) {
+    const field = this.focusField;
+    const next = Math.max(0, this.values[field] + delta);
+    const applied = next - this.values[field];
+    this.values[field] = next;
+    if (this.burst && this.burst.field === field) this.burst.delta += applied;
+    else this.burst = { field, delta: applied };
+    this.burst.seq = (this._burstSeq = (this._burstSeq || 0) + 1); // every press restarts the fade
+    if (this._burstTimer) clearTimeout(this._burstTimer);
+    this._burstTimer = setTimeout(() => { this._burstTimer = null; this.burst = null; this.render(); }, SCORE_BURST_MS);
+    if (!field.endsWith('Points')) this.focus = field.startsWith('blue') ? SCORE_HOME.blue : SCORE_HOME.white;
+    this.render();
+    return applied !== 0;
+  }
+
+  /** Handle a normalised ring key. Returns true when consumed. */
+  handleKey(key) {
+    switch (key) {
+      case 'ArrowLeft': this.move(-1); return true;
+      case 'ArrowRight': this.move(1); return true;
+      case 'ArrowUp': this.adjust(1); return true;
+      case 'ArrowDown': this.adjust(-1); return true;
+      default: return false;
+    }
+  }
+
+  _clearBurst() {
+    if (this._burstTimer) { clearTimeout(this._burstTimer); this._burstTimer = null; }
+    this.burst = null;
+  }
+
+  destroy() { this._clearBurst(); }
+
+  render() {
+    if (!this.rootEl) return;
+    const labels = { Points: t('score.points'), Adv: t('score.adv'), Pen: t('score.pen') };
+    this.rootEl.querySelectorAll('.sb-field').forEach(el => {
+      const field = el.dataset.field;
+      const value = el.querySelector('.sb-value');
+      const text = String(this.values[field]);
+      if (value.textContent !== text) value.textContent = text;
+      const label = el.querySelector('.sb-label');
+      const kind = field.replace(/^(blue|white)/, '');
+      if (label.textContent !== labels[kind]) label.textContent = labels[kind];
+      el.classList.toggle('sb-focus', field === this.focusField);
+      el.classList.toggle('sb-pen-hot', kind === 'Pen' && this.values[field] > 0);
+      const sup = el.querySelector('.sb-sup');
+      const burstText = this.burst && this.burst.field === field
+        ? (this.burst.delta > 0 ? '+' + this.burst.delta : String(this.burst.delta)) : '';
+      if (sup.textContent !== burstText) sup.textContent = burstText;
+      if (burstText === '') {
+        sup.classList.remove('show');
+        delete sup.dataset.seq;
+      } else if (sup.dataset.seq !== String(this.burst.seq)) {
+        // Restart the CSS fade so it runs from the latest press, not the first
+        sup.classList.remove('show');
+        void sup.offsetWidth;
+        sup.dataset.seq = String(this.burst.seq);
+        sup.classList.add('show');
+      }
+    });
+  }
+}
+
 // --- TetrisGame ---
 
 const TETRIS_COLS = 10;
@@ -3163,6 +3308,57 @@ const TETRIS_SHAPES = {
   L: [[0, 0, 1], [1, 1, 1]]
 };
 const TETRIS_LINE_SCORES = [0, 100, 300, 500, 800];
+const TETRIS_SCORES_KEY = 'bjj-timer-tetris-scores';
+const TETRIS_SCORES_MAX = 5;
+const TETRIS_RANKS = ['1ST', '2ND', '3RD', '4TH', '5TH'];
+const TETRIS_NAME_LENGTH = 3;
+const TETRIS_NAME_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ';
+const TETRIS_DEFAULT_NAME = 'AAA';
+
+/** Three characters from TETRIS_NAME_CHARS, upper-cased and padded with spaces. */
+function normalizeTetrisName(name) {
+  const chars = String(name == null ? '' : name).toUpperCase().split('')
+    .filter(ch => TETRIS_NAME_CHARS.includes(ch)).slice(0, TETRIS_NAME_LENGTH);
+  while (chars.length < TETRIS_NAME_LENGTH) chars.push(' ');
+  return chars.join('');
+}
+
+/**
+ * High scores kept in localStorage: at most TETRIS_SCORES_MAX entries,
+ * best first. Missing, corrupted or unavailable storage reads as empty.
+ * @returns {{score: number, lines: number, date: string}[]}
+ */
+function loadTetrisScores() {
+  try {
+    const list = JSON.parse(readStorage(TETRIS_SCORES_KEY) || '[]');
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter(e => e && Number.isFinite(e.score) && e.score > 0)
+      .map(e => ({ name: normalizeTetrisName(e.name), score: Math.floor(e.score), lines: Number.isFinite(e.lines) ? Math.floor(e.lines) : 0, date: typeof e.date === 'string' ? e.date : '' }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, TETRIS_SCORES_MAX);
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveTetrisScores(list) {
+  try { localStorage.setItem(TETRIS_SCORES_KEY, JSON.stringify(list)); } catch (e) { /* storage unavailable */ }
+}
+
+/**
+ * Insert a finished game into the table. Ties keep the older entry ahead.
+ * @returns {{scores: object[], rank: number}} rank is the 0-based row of the new entry, or -1 when it did not make the table
+ */
+function recordTetrisScore(list, entry) {
+  if (!entry || !(entry.score > 0)) return { scores: list.slice(), rank: -1 };
+  let rank = list.findIndex(e => entry.score > e.score);
+  if (rank === -1) rank = list.length;
+  if (rank >= TETRIS_SCORES_MAX) return { scores: list.slice(), rank: -1 };
+  const scores = list.slice();
+  scores.splice(rank, 0, entry);
+  return { scores: scores.slice(0, TETRIS_SCORES_MAX), rank };
+}
 
 /**
  * A deliberately small Tetris rendered as a grid of divs (so it mirrors to
@@ -3180,6 +3376,10 @@ class TetrisGame {
     this._random = (opts && opts.random) || Math.random;
     this._timerId = null;
     this._barkTimer = null;
+    this._now = (opts && opts.now) || (() => new Date());
+    this.highScores = loadTetrisScores();
+    this.newRank = -1;
+    this.entering = false;
     this.reset();
   }
 
@@ -3189,6 +3389,8 @@ class TetrisGame {
     this.lines = 0;
     this.over = false;
     this.paused = false;
+    this.newRank = -1;
+    this.entering = false;
     this.next = this._randomPiece();
     this._spawn();
   }
@@ -3209,7 +3411,52 @@ class TetrisGame {
     if (this._collides(this.cur.shape, this.cur.x, this.cur.y)) {
       this.over = true;
       this.stop();
+      this._recordHighScore();
     }
+  }
+
+  /**
+   * Game over: when the score makes the table, insert it and open arcade
+   * initials entry (▲▼ letter, ◀▶ position, OK confirm). The row is saved
+   * once the name is confirmed, or with whatever was typed if the player
+   * quits mid-entry.
+   */
+  _recordHighScore() {
+    const entry = { name: TETRIS_DEFAULT_NAME, score: this.score, lines: this.lines, date: this._now().toISOString().slice(0, 10) };
+    const { scores, rank } = recordTetrisScore(this.highScores, entry);
+    this.newRank = rank;
+    if (rank >= 0) {
+      this.highScores = scores;
+      this.entering = true;
+      this.nameChars = TETRIS_DEFAULT_NAME.split('');
+      this.namePos = 0;
+    }
+  }
+
+  _handleNameKey(key) {
+    const step = (dir) => {
+      const i = TETRIS_NAME_CHARS.indexOf(this.nameChars[this.namePos]);
+      const n = TETRIS_NAME_CHARS.length;
+      this.nameChars[this.namePos] = TETRIS_NAME_CHARS[(i + dir + n) % n];
+    };
+    switch (key) {
+      case 'ArrowUp': step(1); break;
+      case 'ArrowDown': step(-1); break;
+      case 'ArrowLeft': this.namePos = Math.max(0, this.namePos - 1); break;
+      case 'ArrowRight': this.namePos = Math.min(TETRIS_NAME_LENGTH - 1, this.namePos + 1); break;
+      case 'Enter': this._commitName(); break;
+      default: return;
+    }
+    this.render();
+  }
+
+  /** Store the typed initials on the new row and persist the table. */
+  _commitName() {
+    if (!this.entering) return;
+    this.entering = false;
+    const row = this.highScores[this.newRank];
+    if (row) row.name = normalizeTetrisName(this.nameChars.join(''));
+    saveTetrisScores(this.highScores);
   }
 
   _collides(shape, x, y) {
@@ -3233,6 +3480,7 @@ class TetrisGame {
   }
 
   stop() {
+    this._commitName();
     if (this._timerId !== null) { clearInterval(this._timerId); this._timerId = null; }
     if (this._barkTimer) { clearTimeout(this._barkTimer); this._barkTimer = null; }
   }
@@ -3318,7 +3566,8 @@ class TetrisGame {
   /** Handle a normalised remote key. Returns true when consumed. */
   handleKey(key) {
     if (this.over) {
-      if (key === 'Enter' || key === 'Play') this.start();
+      if (this.entering) this._handleNameKey(key);
+      else if (key === 'Enter' || key === 'Play') this.start();
       return true;
     }
     switch (key) {
@@ -3374,8 +3623,11 @@ class TetrisGame {
     set('.tetris-lines', this.lines);
     set('.tetris-level', this.level);
     const status = this.rootEl.querySelector('.tetris-status');
-    const statusText = this.over ? `${t('tetris.over')} · ${t('tetris.restart')}` : (this.paused ? t('tetris.paused') : '');
+    const overText = this.entering ? `${t('tetris.newHigh')} · ${t('tetris.enterName')}`
+      : (this.newRank >= 0 ? `${t('tetris.newHigh')} · ${t('tetris.restart')}` : `${t('tetris.over')} · ${t('tetris.restart')}`);
+    const statusText = this.over ? overText : (this.paused ? t('tetris.paused') : '');
     if (status && status.textContent !== statusText) status.textContent = statusText;
+    this._renderHighScores();
     const dog = this.rootEl.querySelector('.tetris-dog');
     if (dog) dog.classList.toggle('barking', !!this._barking);
     set('.tetris-bubble', this._barking ? this._barkText : '');
@@ -3392,10 +3644,36 @@ class TetrisGame {
           `<div class="tetris-stat"><span class="tetris-stat-label">${t('tetris.level')}</span><span class="tetris-level">1</span></div>` +
           `<div class="tetris-stat"><span class="tetris-stat-label">${t('tetris.next')}</span><div class="tetris-next">${cell.repeat(8)}</div></div>` +
           `<div class="tetris-status"></div>` +
-          `<div class="tetris-dog-wrap"><span class="tetris-bubble"></span><img class="tetris-dog" src="paco.png" alt="Paco"></div>` +
+          `<div class="tetris-bottom">` +
+            `<div class="tetris-dog-wrap"><span class="tetris-bubble"></span><img class="tetris-dog" src="paco.png" alt="Paco"></div>` +
+            `<div class="tetris-hiscore"><div class="tetris-hiscore-title">${escapeHtml(t('tetris.high'))}</div>` +
+              TETRIS_RANKS.map(r => `<div class="tetris-hiscore-row"><span class="hs-rank">${r}</span><span class="hs-name">${'<span class="hs-ch"></span>'.repeat(TETRIS_NAME_LENGTH)}</span><span class="hs-score"></span></div>`).join('') +
+            `</div>` +
+          `</div>` +
         `</div>` +
       `</div>` +
       `<div class="tetris-hint">${t('tetris.hint')}</div>`;
+  }
+
+  /** Arcade-style table: rank, initials, zero-padded score; empty rows show dashes. */
+  _renderHighScores() {
+    const rows = this.rootEl.querySelectorAll('.tetris-hiscore-row');
+    rows.forEach((row, i) => {
+      const e = this.highScores[i];
+      const typing = this.entering && i === this.newRank;
+      const name = typing ? this.nameChars.join('') : (e ? e.name : '---');
+      const score = e ? String(e.score).padStart(6, '0') : '------';
+      row.querySelectorAll('.hs-ch').forEach((ch, k) => {
+        const text = name[k] === ' ' ? '\u00a0' : name[k];
+        if (ch.textContent !== text) ch.textContent = text;
+        ch.classList.toggle('hs-cursor', typing && k === this.namePos);
+      });
+      const sc = row.querySelector('.hs-score');
+      if (sc.textContent !== score) sc.textContent = score;
+      row.classList.toggle('hs-new', this.over && i === this.newRank && !typing);
+      row.classList.toggle('hs-entering', typing);
+      row.classList.toggle('hs-empty', !e);
+    });
   }
 }
 
@@ -3441,6 +3719,10 @@ class InputHandler {
     this._dualEngine = null;
     this._dualRendererEls = null;
     this.overlayManager._dualTimerCallback = () => this._activateDualMode();
+    // Match scoreboard for competition presets (ring keys while a round is live)
+    this.scoreboard = new Scoreboard(document.getElementById('scoreboard'));
+    this.overlayManager._onScoreboardToggle = () => this._updateScoreboardVisibility();
+    this._updateScoreboardVisibility();
     // A release that lands in another window (or after the page is hidden)
     // never reaches us, so the pending hold must not fire on its own.
     this._onFocusLost = () => this._cancelHold();
@@ -3560,7 +3842,14 @@ class InputHandler {
     if (effectiveKey === 'ArrowUp' || effectiveKey === 'ArrowDown' || effectiveKey === 'ArrowLeft' || effectiveKey === 'ArrowRight' ||
         effectiveKey === 'StepUp' || effectiveKey === 'StepDown') {
       event.preventDefault();
-      if (this._sessionLive()) this._showNotice('notice.stopFirst');
+      if (this._sessionLive()) {
+        // Scoreboard on: the ring keeps score instead of complaining
+        if (this._scoreboardActive() && !event.repeat) {
+          if (this.scoreboard.handleKey(effectiveKey)) this.audioManager.playMuffle();
+        } else if (!this._scoreboardActive()) {
+          this._showNotice('notice.stopFirst');
+        }
+      }
       // A preset with per-round durations has no single value to edit
       else if (this.state.roundDurations) this._showNotice('notice.presetLocked');
       else this._enterTimeSetting();
@@ -3708,6 +3997,7 @@ class InputHandler {
   _deactivateDualMode() {
     if (!this._dualMode) return;
     this._dualMode = false;
+    this._updateScoreboardVisibility();
     if (this._dualEngine) { this._dualEngine.stop(); this._dualEngine = null; }
     this._dualState = null;
     // Restore the round count that activation forced to 0
@@ -3866,6 +4156,7 @@ class InputHandler {
         }
         this.state._presetName = snap.presetName;
         this.renderer.updatePresetLabel(snap.presetName);
+        this._updateScoreboardVisibility();
       }
       this.state.remainingSec = this.state.config.roundDurationSec;
       if (this._dualState) this._dualState.remainingSec = this._dualState.config.roundDurationSec;
@@ -3896,6 +4187,7 @@ class InputHandler {
 
       if (start) {
         this._ready = false;
+        this.scoreboard.reset(); // every match starts 0-0, from this path too
         this.engine.start();
         if (this._dualMode && this._dualEngine) this._dualEngine.start();
         this._refreshTimerDisplay();
@@ -3986,6 +4278,7 @@ class InputHandler {
     this.state._presetName = updatedConfig.presetName || null;
     this.renderer.updatePresetLabel(this.state._presetName);
     StorageManager.save(this.state.config);
+    this._updateScoreboardVisibility();
     if (this.state.phase === PHASES.IDLE) {
       this.state.remainingSec = this.state.config.roundDurationSec;
       this.renderer.updateRoundDisplay(this.state.config.roundDurationSec, false);
@@ -4005,6 +4298,7 @@ class InputHandler {
     this.state.restDurations = null;
     this.renderer.updatePresetLabel(null);
     this.renderer.hideRoundList();
+    this._updateScoreboardVisibility();
   }
 
 
@@ -4080,6 +4374,19 @@ class InputHandler {
     else this._handleEnterLongPress(); // hold OK / Menu = reset (or stop to Ready while running)
   }
 
+  /** True when the scoreboard setting is on and a competition preset is loaded (never in dual mode). */
+  _scoreboardActive() {
+    return !!APP_SETTINGS.scoreboard && !this._dualMode &&
+      !!this.state._presetName && Object.prototype.hasOwnProperty.call(APP_SETTINGS.competitionPresets, this.state._presetName);
+  }
+
+  /** Show or hide the panels; the body class travels to the second TV with the snapshot. */
+  _updateScoreboardVisibility() {
+    const active = this._scoreboardActive();
+    document.body.classList.toggle('scoreboard', active);
+    if (!active) this.scoreboard.reset();
+  }
+
   /** True while either timer is running or paused. */
   _sessionLive() {
     return this.state.phase !== PHASES.IDLE ||
@@ -4149,6 +4456,11 @@ class InputHandler {
       items.push({ id: 'reset-timer', icon: 'stop', name: t('menu.stopKeep'), action: () => {
         this._handleZeroPress(); // stop → back to the ready state with the same settings
       } });
+      if (this._scoreboardActive()) {
+        items.push({ id: 'reset-score', icon: 'trophy', name: t('menu.resetScore'), action: () => {
+          this.scoreboard.reset();
+        } });
+      }
       items.push(this._resetMenuItem(true));
       items.push(hideItem);
       this.overlayManager.showMainMenu(items);
@@ -4165,6 +4477,11 @@ class InputHandler {
     items.push({ id: 'competition', icon: 'belt', name: t('menu.competition'), submenu: true, action: () => {
       this.overlayManager.showCompetitionMenu({ ...this.state.config }, (cfg) => this._applyMenuConfig(cfg));
     } });
+    if (this.state._presetName && Object.prototype.hasOwnProperty.call(APP_SETTINGS.competitionPresets, this.state._presetName)) {
+      items.push({ id: 'scoreboard', icon: 'trophy', name: t('menu.scoreboard'), toggle: true,
+        note: () => onOff(APP_SETTINGS.scoreboard),
+        action: () => { this.overlayManager.toggleScoreboard(); } });
+    }
     if (!this._isDefaultState()) items.push(this._resetMenuItem(false));
     items.push({ id: 'schedule', icon: 'calendar', name: t('menu.schedule'), submenu: true, action: () => {
       this.overlayManager.showSchedule(this._scheduleManager ? this._scheduleManager._schedule : []);
@@ -4311,6 +4628,7 @@ class InputHandler {
       this._dualEngine.stop();
     }
     this.audioManager.playCancel();
+    this.scoreboard.reset();
     const rd = this.state.roundDurations;
     this.renderer.updateRoundDisplay(rd ? rd[0] : this.state.config.roundDurationSec, false);
     this.renderer.updateRestDisplay(this.state.config.restDurationSec, false);
@@ -4344,8 +4662,9 @@ class InputHandler {
         this.renderer.updateStatusBar('ready');
         return;
       }
-      // Second Enter: start the timer
+      // Second Enter: start the timer; every match starts 0-0
       this._ready = false;
+      this.scoreboard.reset();
       this.engine.start();
       if (this._dualMode && this._dualEngine) this._dualEngine.start();
       this._refreshTimerDisplay();
@@ -4398,6 +4717,7 @@ class InputHandler {
       this.renderer.hidePrepCountdown();
       this.renderer.hideRoundList();
       this.renderer.hidePauseOverlay();
+      this._updateScoreboardVisibility();
       this.audioManager.playCancel();
     } else {
       this._stopToReady(); // same place as every other stop
@@ -4406,6 +4726,7 @@ class InputHandler {
 
   destroy() {
     this._cancelHold();
+    this.scoreboard.destroy();
     clearTimeout(this._noticeTimer);
     document.removeEventListener('keydown', this._onKeyDown);
     document.removeEventListener('keyup', this._onKeyUp);
@@ -5157,7 +5478,7 @@ function nextDisplayMode(mode) {
 // wall clock, class-progress canvas, and holiday canvas are NOT synced —
 // secondaries render those locally (they're derived from wall time).
 const SYNC_SECTION_IDS = [
-  'preset-label', 'round-timer', 'rest-timer', 'round-counter',
+  'preset-label', 'round-timer', 'rest-timer', 'round-counter', 'scoreboard',
   'round-timer-2', 'rest-timer-2',
   'overlay', 'edit-instruction-bar', 'prep-overlay', 'screen-flash',
   'round-list', 'next-class-display', 'status-bar', 'schedule-display',
@@ -5501,7 +5822,7 @@ class DisplaySyncManager {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { formatTime, isValidSeconds, isNumeric, escapeHtml, generateRoundDurations, DEFAULT_CONFIG, APP_SETTINGS, applyConfigSettings, PHASES, prepBeepSecond, STORAGE_KEY, StorageManager, createTimerState, TimerEngine, AudioManager, ICONS, presetIcon, TRAINING_MODES, Renderer, ClassProgressRenderer, OverlayManager, InputHandler, ClassPresetManager, ScheduleManager, WeatherManager, HolidayThemeManager, HOLIDAY_THEMES, getActiveHoliday, VALID_DAYS, VALID_CLASS_TYPES, SCHEDULE_STORAGE_KEY, SYNCED_SCHEDULE_FILE, DISPLAY_MODES, DISPLAY_MODE_LABELS, DISPLAY_MODE_STORAGE_KEY, nextDisplayMode, DisplaySyncManager, SYNC_SECTION_IDS, SYNC_ATTR_IDS, buildSyncSnapshot, applySyncSnapshot, syncElementFromHtml, HOLD_MS, TRAINING_MENU_ITEMS, moveSelection, stepNumericBuffer, STRINGS, LANGUAGES, t, setLanguage, applyStaticTranslations, presetDisplayName, classDisplayName, CLASS_TITLES, TetrisGame, TETRIS_COLS, TETRIS_ROWS };
+  module.exports = { formatTime, isValidSeconds, isNumeric, escapeHtml, generateRoundDurations, DEFAULT_CONFIG, APP_SETTINGS, applyConfigSettings, PHASES, prepBeepSecond, STORAGE_KEY, StorageManager, createTimerState, TimerEngine, AudioManager, ICONS, presetIcon, TRAINING_MODES, Renderer, ClassProgressRenderer, OverlayManager, InputHandler, ClassPresetManager, ScheduleManager, WeatherManager, HolidayThemeManager, HOLIDAY_THEMES, getActiveHoliday, VALID_DAYS, VALID_CLASS_TYPES, SCHEDULE_STORAGE_KEY, SYNCED_SCHEDULE_FILE, DISPLAY_MODES, DISPLAY_MODE_LABELS, DISPLAY_MODE_STORAGE_KEY, nextDisplayMode, DisplaySyncManager, SYNC_SECTION_IDS, SYNC_ATTR_IDS, buildSyncSnapshot, applySyncSnapshot, syncElementFromHtml, HOLD_MS, TRAINING_MENU_ITEMS, moveSelection, stepNumericBuffer, STRINGS, LANGUAGES, t, setLanguage, applyStaticTranslations, presetDisplayName, classDisplayName, CLASS_TITLES, Scoreboard, SCORE_FIELDS, SCORE_BURST_MS, TetrisGame, TETRIS_COLS, TETRIS_ROWS, TETRIS_SCORES_KEY, TETRIS_SCORES_MAX, TETRIS_NAME_CHARS, loadTetrisScores, recordTetrisScore, normalizeTetrisName };
 }
 
 // --- Application Initialization ---
@@ -5720,6 +6041,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         s.restDurations = null;
         s._presetName = pendingClass.title;
         renderer.updatePresetLabel(s._presetName);
+        inputHandler._updateScoreboardVisibility();
         StorageManager.save(s.config);
         renderer.updateRoundDisplay(s.config.roundDurationSec, false);
         renderer.updateRestDisplay(s.config.restDurationSec, false);
@@ -5990,6 +6312,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
               }
               state._presetName = activeClass.title;
               renderer.updatePresetLabel(activeClass.title);
+              inputHandler._updateScoreboardVisibility();
             }
           } else {
             // Defer preset loading until the session stops or the editor
@@ -6045,6 +6368,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     // Language switch: re-label everything currently on screen
     overlayManager._onLanguageChange = () => {
       applyStaticTranslations();
+      inputHandler.scoreboard.render();
       const c = renderer._lastCounter;
       if (c) renderer.updateRoundCounter(c.current, c.total);
       renderer.updatePresetLabel(renderer._lastPreset || null);

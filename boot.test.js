@@ -330,6 +330,45 @@ describe('app boot', () => {
     app.APP_SETTINGS.audio.classStartSound = CONFIG.audio.classStartSound;
   });
 
+  it('schedule class changes and language switches keep the scoreboard panels honest', async () => {
+    stubEnvironment('');
+    localStorage.setItem('bjj-timer-scoreboard', 'true');
+    app.APP_SETTINGS.scoreboard = true;
+    vi.setSystemTime(new Date(2026, 8, 8, 12, 15));
+    await bootApp();
+    const { state, inputHandler } = window.__bjjApp;
+    expect(state._presetName).toBe('Adult Noon Class'); // a class, not a competition preset
+    expect(document.body.classList.contains('scoreboard')).toBe(false);
+    const competition = Object.keys(app.APP_SETTINGS.competitionPresets)[0];
+    inputHandler._applyMenuConfig({ roundDurationSec: 300, restDurationSec: 60, numRounds: 0, prepDurationSec: 0, presetName: competition });
+    expect(document.body.classList.contains('scoreboard')).toBe(true);
+    const label = () => document.querySelector('#scoreboard .sb-field[data-field="bluePoints"] .sb-label').textContent;
+    expect(label()).toBe('Points');
+    inputHandler.overlayManager.toggleLanguage(); // → pt
+    expect(label()).toBe('Pontos');
+    inputHandler.overlayManager.toggleLanguage(); // → en
+    expect(label()).toBe('Points');
+    // The schedule re-applies the class and the panels must go with the preset
+    setSchedule(false);
+    setSchedule(true);
+    expect(state._presetName).toBe('Adult Noon Class');
+    expect(document.body.classList.contains('scoreboard')).toBe(false);
+    // Deferred class change (session running when the class starts) does the same
+    inputHandler._applyMenuConfig({ roundDurationSec: 300, restDurationSec: 60, numRounds: 0, prepDurationSec: 0, presetName: competition });
+    expect(document.body.classList.contains('scoreboard')).toBe(true);
+    press(' '); press(' ');
+    expect(state.phase).toBe(app.PHASES.ROUND);
+    setSchedule(false);
+    vi.setSystemTime(new Date(2026, 8, 15, 12, 15));
+    window.__bjjApp.scheduleManager._checkActiveClass();
+    setSchedule(true); // class change deferred while running
+    expect(document.body.classList.contains('scoreboard')).toBe(true);
+    inputHandler._stopToReady(); // session stops → deferred class applies
+    expect(state._presetName).toBe('Adult Noon Class');
+    expect(document.body.classList.contains('scoreboard')).toBe(false);
+    app.APP_SETTINGS.scoreboard = false;
+  });
+
   it('emits the latest transition and current countdown after a stall, for both timer engines', async () => {
     stubEnvironment('?dual=1');
     localStorage.setItem('bjj-timer-display-mode', 'split');
